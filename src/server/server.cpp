@@ -84,6 +84,11 @@ void server_update(memory_arena *mem, communication *comm) {
             communication comm = ctx->clients.comms[i];
             header.name = comm_server_msg_names::INIT_MAP;
             comm.send(comm, &header, sizeof(header));
+            
+            comm_server_init_map_body init_map_body;
+            init_map_body.width = ctx->map.terrain_width;
+            init_map_body.height = ctx->map.terrain_height;
+            comm.send(comm, &init_map_body, sizeof(init_map_body));
         }
 
         ctx->current_state = server_state_names::TEMP;

@@ -27,9 +27,12 @@ enum comm_client_msg_names {
 
 struct comm_client_header {
     comm_client_msg_names name;
-    u32 size;
 };
 
 struct comm_server_header {
     comm_server_msg_names name;
+};
+
+struct comm_server_init_map_body {
+    u32 width, height;
 };

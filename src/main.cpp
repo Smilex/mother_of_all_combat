@@ -33,8 +33,8 @@ int main(int argc, char *argv[]) {
     server_memory = memory_arena_child(&total_memory, MB(5));
     client_memory = memory_arena_child(&total_memory, MB(5));
 
-    ring_buffer<u8> server_mem_in = ring_buffer<u8>(&total_memory, sizeof(comm_client_header) * 2);
-    ring_buffer<u8> server_mem_out = ring_buffer<u8>(&total_memory, sizeof(comm_client_header) * 2);
+    ring_buffer<u8> server_mem_in = ring_buffer<u8>(&total_memory, MB(2));
+    ring_buffer<u8> server_mem_out = ring_buffer<u8>(&total_memory, MB(2));
 
     server_pipe.in = &server_mem_in;
     server_pipe.out = &server_mem_out;
