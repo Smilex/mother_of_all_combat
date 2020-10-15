@@ -23,11 +23,11 @@ int main(int argc, char *argv[]) {
 
     comm_server_memory_init(&server_comm, &comm_memory);
 
-    InitWindow(800, 600, "Hello, world");
+    InitWindow(1280, 720, "Hello, world");
     SetTargetFPS(60);
 
     while(!WindowShouldClose()) {
-        server_update(&server_memory);
+        server_update(&server_memory, &server_comm);
 
         BeginDrawing();
             ClearBackground(WHITE);

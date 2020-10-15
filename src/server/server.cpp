@@ -26,10 +26,10 @@ void server_update(memory_arena *mem, communication *comm) {
                                                 );
         
         comm_server_init_map init_map_msg;
-        init_map_msg.name = comm_server_msg_names.INIT_MAP;
+        init_map_msg.name = comm_server_msg_names::INIT_MAP;
         init_map_msg.width = ctx->map.terrain_width;
         init_map_msg.height = ctx->map.terrain_height;
-        comm->send(&init_map_msg, sizeof(init_map_msg));
+        comm->send(comm, &init_map_msg, sizeof(init_map_msg));
 
         ctx->is_init = true;
     }
