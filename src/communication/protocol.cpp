@@ -18,6 +18,7 @@ struct communication {
 
 enum comm_server_msg_names {
     INIT_MAP = 0,
+    DISCOVER,
 };
 
 enum comm_client_msg_names {
@@ -35,4 +36,8 @@ struct comm_server_header {
 
 struct comm_server_init_map_body {
     u32 width, height;
+};
+
+struct comm_server_discover_body {
+    u32 x, y;
 };

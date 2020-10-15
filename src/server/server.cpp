@@ -89,6 +89,21 @@ void server_update(memory_arena *mem, communication *comm) {
             init_map_body.width = ctx->map.terrain_width;
             init_map_body.height = ctx->map.terrain_height;
             comm.send(comm, &init_map_body, sizeof(init_map_body));
+
+            header.name = comm_server_msg_names::DISCOVER;
+            comm.send(comm, &header, sizeof(header));
+            
+            comm_server_discover_body discover_body;
+            discover_body.x = 10;
+            discover_body.y = 7;
+            comm.send(comm, &discover_body, sizeof(discover_body));
+
+            header.name = comm_server_msg_names::DISCOVER;
+            comm.send(comm, &header, sizeof(header));
+
+            discover_body.x = 9;
+            discover_body.y = 6;
+            comm.send(comm, &discover_body, sizeof(discover_body));
         }
 
         ctx->current_state = server_state_names::TEMP;
