@@ -18,6 +18,7 @@ typedef CLIENT_UPDATE_AND_RENDER(client_update_and_render_t);
 
 memory_arena total_memory, server_memory, client_memory;
 communication server_comm, client_comm;
+comm_memory_pipe server_pipe, client_pipe;
 
 client_update_and_render_t *client_update_and_render_ptr = &client_update_and_render;
 
@@ -30,11 +31,19 @@ int main(int argc, char *argv[]) {
     memset(total_memory.base, 0, total_memory.max);
 
     server_memory = memory_arena_child(&total_memory, MB(5));
-    ring_buffer<u8> comm_memory = ring_buffer<u8>(&total_memory, sizeof(comm_client_header));
     client_memory = memory_arena_child(&total_memory, MB(5));
 
-    comm_server_memory_init(&server_comm, &comm_memory);
-    comm_client_memory_init(&client_comm, &comm_memory);
+    ring_buffer<u8> server_mem_in = ring_buffer<u8>(&total_memory, sizeof(comm_client_header) * 2);
+    ring_buffer<u8> server_mem_out = ring_buffer<u8>(&total_memory, sizeof(comm_client_header) * 2);
+
+    server_pipe.in = &server_mem_in;
+    server_pipe.out = &server_mem_out;
+
+    client_pipe.in = &server_mem_out;
+    client_pipe.out = &server_mem_in;
+
+    comm_server_memory_init(&server_comm, &server_pipe);
+    comm_client_memory_init(&client_comm, &client_pipe);
 
     InitWindow(1280, 720, "Hello, world");
     SetTargetFPS(60);

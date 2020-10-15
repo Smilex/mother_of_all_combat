@@ -3,6 +3,8 @@
 
 enum server_state_names {
     AWAITING_CONNECTIONS = 0,
+    INIT_EVERYBODY,
+    TEMP
 };
 
 struct server_context {
@@ -70,7 +72,20 @@ void server_update(memory_arena *mem, communication *comm) {
             if (len == sizeof(header) && header.name == comm_client_msg_names::CONNECT) {
                 ctx->clients.connecteds[i] = true;
                 printf("CONNECTED\n");
+            } else if(len == sizeof(header) && header.name == comm_client_msg_names::START) {
+                if (ctx->clients.admins[i]) {
+                    ctx->current_state = server_state_names::INIT_EVERYBODY;
+                }
             }
         }
+    } else if (ctx->current_state == server_state_names::INIT_EVERYBODY) {
+        for (u32 i = 0; i < ctx->clients.used; ++i) {
+            comm_server_header header;
+            communication comm = ctx->clients.comms[i];
+            header.name = comm_server_msg_names::INIT_MAP;
+            comm.send(comm, &header, sizeof(header));
+        }
+
+        ctx->current_state = server_state_names::TEMP;
     }
 }

@@ -78,6 +78,8 @@ struct ring_buffer {
             buffer[i] = base[read_it];
             ++read_it;
         }
+
+        return lesser;
     }
 
     u32 distance() {

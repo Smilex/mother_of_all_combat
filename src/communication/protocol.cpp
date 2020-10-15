@@ -1,3 +1,8 @@
+struct comm_memory_pipe {
+    ring_buffer<u8> *in;
+    ring_buffer<u8> *out;
+};
+
 struct communication;
 
 #define COMM_SEND(_n) void _n(communication comm, void *data, u32 size)
@@ -17,9 +22,14 @@ enum comm_server_msg_names {
 
 enum comm_client_msg_names {
     CONNECT = 0,
+    START,
 };
 
 struct comm_client_header {
     comm_client_msg_names name;
     u32 size;
+};
+
+struct comm_server_header {
+    comm_server_msg_names name;
 };
