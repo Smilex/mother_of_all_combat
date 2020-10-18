@@ -15,7 +15,7 @@ struct client_context {
     bool is_init;
     
     client_screen_names current_screen;
-    memory_arena temp_mem;
+    memory_arena temp_mem, read_buffer;
 
     struct {
         u32 width, height;
@@ -79,6 +79,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
     if (!ctx->is_init) {
         memory_arena_use(mem, sizeof(*ctx));
+        ctx->read_buffer = memory_arena_child(mem, MB(10));
 
         ctx->is_init = true;
     }
@@ -93,39 +94,57 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 comm_client_header header;
                 header.name = comm_client_msg_names::CONNECT;
 
-                comm->send(*comm, &header, sizeof(header));
+                comm_write(comm, &header, sizeof(header));
 
                 header.name = comm_client_msg_names::START;
-                comm->send(*comm, &header, sizeof(header));
+                comm_write(comm, &header, sizeof(header));
 
                 ctx->current_screen = client_screen_names::INITIALIZE_GAME;
             }
         } else if (ctx->current_screen == client_screen_names::INITIALIZE_GAME) {
-            comm_server_header header;
-            s32 len = comm->recv(*comm, &header, sizeof(header)); 
-            if (len == sizeof(header)) {
-                if (header.name == comm_server_msg_names::INIT_MAP) {
-                    comm_server_init_map_body init_map_body;
-                    len = comm->recv(*comm, &init_map_body, sizeof(init_map_body));
-                    if (len == sizeof(init_map_body)) {
-                        initialize_map(ctx, mem, init_map_body.width, init_map_body.height);
-                        ctx->current_screen = client_screen_names::GAME;
+            comm_server_header *header;
+            s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max); 
+            u32 buf_it = sizeof(comm_shared_header);
+            if (len > 0) {
+                if (len - buf_it >= sizeof(*header)) {
+                    header = (comm_server_header *)(ctx->read_buffer.base + buf_it);
+                    if (header->name == comm_server_msg_names::INIT_MAP) {
+                        comm_server_init_map_body *init_map_body;
+                        buf_it += sizeof(*header);
+                        if (len - buf_it >= sizeof(*init_map_body)) {
+                            init_map_body = (comm_server_init_map_body *)(ctx->read_buffer.base + buf_it);
+                            initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
+                            ctx->current_screen = client_screen_names::GAME;
+                        }
                     }
                 }
             }
         } else if (ctx->current_screen == client_screen_names::GAME) {
-            comm_server_header header;
-            s32 len = comm->recv(*comm, &header, sizeof(header));
-            if (len == sizeof(header)) {
-                if (header.name == comm_server_msg_names::DISCOVER) {
-                    comm_server_discover_body discover_body;
-                    len = comm->recv(*comm, &discover_body, sizeof(discover_body));
-                    if (len == sizeof(discover_body)) {
-                        ctx->map.terrain[discover_body.y * ctx->map.width + discover_body.x] = client_terrain_names::GROUND;
+            comm_server_header *header;
+            s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
+            u32 buf_it = sizeof(comm_shared_header);
+            if (len > 0) {
+                while (len - buf_it >= sizeof(*header)) {
+                    header = (comm_server_header *)(ctx->read_buffer.base + buf_it);
+                    buf_it += sizeof(*header);
+                    if (header->name == comm_server_msg_names::DISCOVER) {
+                        comm_server_discover_body *discover_body;
+                        if (len - buf_it >= sizeof(*discover_body)) {
+                            discover_body = (comm_server_discover_body *)(ctx->read_buffer.base + buf_it);
+                            buf_it += sizeof(*discover_body);
+                            ctx->map.terrain[discover_body->y * ctx->map.width + discover_body->x] = client_terrain_names::GROUND;
+                        }
+                    } else if (header->name == comm_server_msg_names::PING) {
+                        printf("SERVER PINGED\n");
+                        comm_client_header client_header;
+                        client_header.name = comm_client_msg_names::PONG;
+                        comm_write(comm, &client_header, sizeof(client_header));
                     }
                 }
             }
             draw_map(ctx);
         }
     EndDrawing();
+
+    comm_flush(comm);
 }

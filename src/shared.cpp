@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <assert.h>
+#include <time.h>
 
 #define KB(x) (x * 1024)
 #define MB(x) (KB(x) * 1024)
@@ -9,6 +10,7 @@ typedef uint8_t u8;
 typedef int32_t s32;
 typedef uintmax_t umax;
 typedef float real32;
+typedef double real64;
 
 enum terrain_names {
     FOG = 0,
@@ -16,6 +18,8 @@ enum terrain_names {
     WATER,
     HILLS
 };
+
+u32 time_get_now_in_ms();
 
 struct memory_arena {
     u8 *base;
@@ -82,6 +86,11 @@ struct ring_buffer {
         return lesser;
     }
 
+	void add_to_read_it(u32 amount) {
+		assert(distance() >= amount);
+		read_it += amount;
+	}
+
     u32 distance() {
         u32 rv = 0;
         if (write_it < read_it) {
@@ -92,5 +101,136 @@ struct ring_buffer {
         }
 
         return rv;
+    }
+};
+
+template<class T>
+struct doubly_linked_list_node {
+    struct doubly_linked_list_node *prev, *next;
+    T payload;
+};
+
+template<class T>
+struct doubly_linked_list {
+    struct doubly_linked_list_node<T> *first;
+
+    u32 length() {
+        doubly_linked_list_node<T> *iter = first;
+        
+        u32 rv = 0;
+        while (iter) {
+            ++rv;
+            iter = iter->next;
+        }
+
+        return rv;
+    }
+
+    void push_front(T item) {
+        if (!first) {
+            first = (doubly_linked_list_node<T> *)malloc(sizeof(*first));
+            first->prev = first->next = NULL;
+            first->payload = item;
+        } else {
+            first->prev = (doubly_linked_list_node<T> *)malloc(sizeof(*first->prev));
+            first->prev->prev = NULL;
+            first->prev->next = first;
+            first->prev->payload = item;
+        }
+    }
+
+    void push_back(T item) {
+        if (!first) {
+            first = (doubly_linked_list_node<T> *)malloc(sizeof(*first));
+            first->prev = first->next = NULL;
+            first->payload = item;
+        } else {
+            doubly_linked_list_node<T> *iter = first;
+
+            while(iter->next) {
+                iter = iter->next;
+            }
+
+            iter->next = (doubly_linked_list_node<T> *)malloc(sizeof(*iter->next));
+            iter->next->next = NULL;
+            iter->next->prev = iter;
+            iter->next->payload = item;
+        }
+    }
+
+    void pop_front() {
+        if (!first) {
+            return;
+        }
+
+        first = first->next;
+        free(first->prev);
+        first->prev = NULL;
+    }
+
+    void pop_back() {
+        if (!first) {
+            return;
+        }
+        doubly_linked_list_node<T> *prev = first, *iter = first->next;
+
+        while (iter) {
+            prev = iter;
+            iter = iter->next;
+        }
+
+        prev->prev->next = NULL;
+        free(prev);
+        return;
+    }
+
+    T *get(u32 idx) {
+        T *rv = NULL;
+        doubly_linked_list_node<T> *iter = first;
+
+        u32 cnt = 0;
+        while (iter) {
+            if (idx == cnt) {
+                rv = &iter->payload;
+                break;
+            }
+            iter = iter->next;
+            ++cnt;
+        }
+
+        return rv;
+    }
+
+    void erase(u32 idx) {
+        doubly_linked_list_node<T> *iter = first;
+
+        u32 cnt = 0;
+        while (iter) {
+            if (idx == cnt) {
+                if (iter->prev) {
+                    iter->prev->next = iter->next;
+                }
+                if (iter->next) {
+                    iter->next->prev = iter->prev;
+                }
+                free(iter);
+                if (first == iter)
+                    first = NULL;
+                break;
+            }
+            iter = iter->next;
+            ++cnt;
+        }
+    }
+
+    void clear() {
+        doubly_linked_list_node<T> *iter = first, *iter_next = first->next;
+
+        first = NULL;
+        while (iter) {
+            iter_next = iter->next;
+            free(iter);
+            iter = iter_next;
+        }
     }
 };
