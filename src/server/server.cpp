@@ -1,5 +1,8 @@
-#define MAP_GRID_WIDTH 100
-#define MAP_GRID_HEIGHT 100
+#define STB_PERLIN_IMPLEMENTATION
+#include "stb_perlin.h"
+
+#define MAP_GRID_WIDTH 80
+#define MAP_GRID_HEIGHT 80
 
 enum server_state_names {
     AWAITING_CONNECTIONS = 0,
@@ -30,52 +33,18 @@ real32 interpolate(real32 a, real32 b, real32 w) {
     return (1.0f - w) * a + w * b;
 }
 
-v2<real32> perlin_random_gradient(u32 x, u32 y) {
-    real32 random = 2920.f * sin(x * 21942.f + y * 171324.f + 8912.f) * cos(x * 23157.f * y * 217832.f + 9758.f);
-    return (v2<real32>) { .x = cos(random), .y = sin(random) };
-}
-
-real32 perlin_dot_grid_gradient(u32 ix, u32 iy, u32 x, u32 y) {
-    v2<real32> gradient = perlin_random_gradient(ix, iy);
-
-    s32 dx = (s32)x - (s32)ix;
-    s32 dy = (s32)y - (s32)iy;
-
-    return (dx * gradient.x + dy * gradient.y);
-}
-
-real32 perlin_at_coordinate(u32 x, u32 y) {
-    u32 grid_size = 2;
-    u32 x0 = floor((real32)x / grid_size) * grid_size;
-    u32 x1 = x0 + grid_size;
-    u32 y0 = floor((real32)y / grid_size) * grid_size;
-    u32 y1 = y0 + grid_size;
-
-    s32 sx = (s32)x - (s32)x0;
-    s32 sy = (s32)y - (s32)y0;
-
-    real32 n0, n1, ix0, ix1;
-
-    n0 = perlin_dot_grid_gradient(x0, y0, x, y);
-    n1 = perlin_dot_grid_gradient(x1, y0, x, y);
-    ix0 = interpolate(n0, n1, 0.5);
-
-    n0 = perlin_dot_grid_gradient(x0, y1, x, y);
-    n1 = perlin_dot_grid_gradient(x1, y1, x, y);
-    ix1 = interpolate(n0, n1, 0.5);
-
-    return interpolate(ix0, ix1, 0.5);
-}
-
 void generate_map(server_context *ctx) {
     real32 *noise_map = (real32 *)memory_arena_use(&ctx->temp_buffer, sizeof(*noise_map)
                                                             * ctx->map.terrain_height
                                                             * ctx->map.terrain_width
                                                     );
     for (u32 y = 0; y < ctx->map.terrain_height; ++y) {
-        for (u32 x = 0; x < ctx->map.terrain_height; ++x) {
+        for (u32 x = 0; x < ctx->map.terrain_width; ++x) {
             u32 idx = y * ctx->map.terrain_height + x;
-            real32 perlin = perlin_at_coordinate(x, y);
+            real32 nx = (real32)x / ctx->map.terrain_width - 0.5;
+            real32 ny = (real32)y / ctx->map.terrain_height - 0.5;
+            real32 freq = 9.0f;
+            real32 perlin = stb_perlin_noise3(nx * freq, ny * freq, 0, 0, 0, 0) / 2.0 + 0.5;
             noise_map[idx] = perlin;
         }
     }
@@ -119,7 +88,8 @@ void generate_map(server_context *ctx) {
     for (u32 y = 0; y < ctx->map.terrain_height; ++y) {
         for (u32 x = 0; x < ctx->map.terrain_height; ++x) {
             u32 idx = y * ctx->map.terrain_height + x;
-            if (noise_map[idx] > 0.0 && circles_map[idx] > 0.0) {
+            real32 value = interpolate(noise_map[idx], circles_map[idx], 0.0);
+            if (value > 0.65) {
                 ctx->map.terrain[idx] = terrain_names::GROUND;
             } else {
                 ctx->map.terrain[idx] = terrain_names::WATER;
