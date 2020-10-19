@@ -27,6 +27,15 @@ struct client_context {
     } camera;
 };
 
+client_terrain_names terrain_names_to_client_terrain_names(terrain_names name) {
+    if (name == terrain_names::FOG)
+        return client_terrain_names::FOG;
+    else if (name == terrain_names::GROUND)
+        return client_terrain_names::GROUND;
+    else if (name == terrain_names::WATER)
+        return client_terrain_names::WATER;
+}
+
 void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 height) {
     ctx->map.width = width;
     ctx->map.height = height;
@@ -67,6 +76,8 @@ void draw_map(client_context *ctx) {
                 DrawRectangle(X, Y, tile_width, tile_height, BLACK);
             else if (ctx->map.terrain[it] == client_terrain_names::GROUND)
                 DrawRectangle(X, Y, tile_width, tile_height, GREEN);
+            else if (ctx->map.terrain[it] == client_terrain_names::WATER)
+                DrawRectangle(X, Y, tile_width, tile_height, BLUE);
             X = X + tile_width;
         }
         X = 0;
@@ -79,7 +90,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
     if (!ctx->is_init) {
         memory_arena_use(mem, sizeof(*ctx));
-        ctx->read_buffer = memory_arena_child(mem, MB(10));
+        ctx->read_buffer = memory_arena_child(mem, MB(50), "client_memory_read");
 
         ctx->is_init = true;
     }
@@ -120,6 +131,30 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 }
             }
         } else if (ctx->current_screen == client_screen_names::GAME) {
+            real32 scr_width = GetScreenWidth();
+            real32 scr_height = GetScreenHeight();
+
+            if (IsKeyPressed(KEY_LEFT)) {
+                if (ctx->camera.x > 0) {
+                    ctx->camera.x -= 1;
+                }
+            }
+            if (IsKeyPressed(KEY_RIGHT)) {
+                if (ctx->camera.x < ctx->map.width) {
+                    ctx->camera.x += 1;
+                }
+            }
+            if (IsKeyPressed(KEY_UP)) {
+                if (ctx->camera.y > 0) {
+                    ctx->camera.y -= 1;
+                }
+            }
+            if (IsKeyPressed(KEY_DOWN)) {
+                if (ctx->camera.y < ctx->map.height) {
+                    ctx->camera.y += 1;
+                }
+            }
+
             comm_server_header *header;
             s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
             u32 buf_it = sizeof(comm_shared_header);
@@ -132,10 +167,13 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         if (len - buf_it >= sizeof(*discover_body)) {
                             discover_body = (comm_server_discover_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*discover_body);
-                            ctx->map.terrain[discover_body->y * ctx->map.width + discover_body->x] = client_terrain_names::GROUND;
+                            for (u32 i = 0; i < discover_body->num; ++i) {
+                                comm_server_discover_body_tile *tile = (comm_server_discover_body_tile *)(ctx->read_buffer.base + buf_it);
+                                buf_it += sizeof(*tile);
+                                ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] = terrain_names_to_client_terrain_names(tile->name);
+                            }
                         }
                     } else if (header->name == comm_server_msg_names::PING) {
-                        printf("SERVER PINGED\n");
                         comm_client_header client_header;
                         client_header.name = comm_client_msg_names::PONG;
                         comm_write(comm, &client_header, sizeof(client_header));
@@ -143,6 +181,13 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 }
             }
             draw_map(ctx);
+
+            if (GuiButton((Rectangle){scr_width / 2 - 150 / 2, scr_height / 2 - 15, 150, 30}, "DISCOVER")) {
+                comm_client_header header;
+                header.name = comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP;
+
+                comm_write(comm, &header, sizeof(header));
+            }
         }
     EndDrawing();
 

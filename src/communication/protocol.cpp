@@ -180,7 +180,8 @@ enum comm_server_msg_names {
 enum comm_client_msg_names {
     CONNECT = 0,
     START,
-    PONG
+    PONG,
+    ADMIN_DISCOVER_ENTIRE_MAP,
 };
 
 struct comm_client_header {
@@ -196,5 +197,10 @@ struct comm_server_init_map_body {
 };
 
 struct comm_server_discover_body {
-    u32 x, y;
+    u32 num;
+};
+
+struct comm_server_discover_body_tile {
+    v2<u32> position;
+    terrain_names name;
 };

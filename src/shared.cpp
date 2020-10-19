@@ -12,6 +12,29 @@ typedef uintmax_t umax;
 typedef float real32;
 typedef double real64;
 
+template <class T>
+struct v2 {
+    T x, y;
+
+    real32 length() {
+        return sqrtf(x * x + y * y);
+    }
+
+    v2<T> operator-(v2<T> rhs) {
+        v2<T> rv;
+        rv.x = this->x - rhs.x;
+        rv.y = this->y - rhs.y;
+        return rv;
+    }
+
+    v2<T> operator*(T scalar) {
+        v2<T> rv;
+        rv.x = this->x * scalar;
+        rv.y = this->y * scalar;
+        return rv;
+    }
+};
+
 enum terrain_names {
     FOG = 0,
     GROUND,
@@ -24,22 +47,30 @@ u32 time_get_now_in_ms();
 struct memory_arena {
     u8 *base;
     u32 max, used;
+    char *name;
 };
 
 u8 *memory_arena_use(memory_arena *mem, u32 amount) {
     u8 *rv = mem->base + mem->used;
-    assert(mem->used + amount <= mem->max);
+    if (mem->used + amount > mem->max) {
+        printf("TOO MUCH MEMORY USED FOR '%s'\n", mem->name);
+        assert(mem->used + amount <= mem->max);
+    }
     mem->used += amount;
     return rv;
 }
 
-memory_arena memory_arena_child(memory_arena *parent, u32 size) {
+memory_arena memory_arena_child(memory_arena *parent, u32 size, char *name) {
     memory_arena rv;
     rv.base = parent->base + parent->used;
-    assert(parent->used + size <= parent->max);
+    if (parent->used + size > parent->max) {
+        printf("TOO MUCH MEMORY USED FROM '%s' WHEN CREATING CHILD '%s'\n", parent->name, name);
+        assert(parent->used + size <= parent->max);
+    }
     parent->used += size;
     rv.max = size;
     rv.used = 0;
+    rv.name = name;
     return rv;
 }
 

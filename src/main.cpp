@@ -15,10 +15,13 @@
 typedef CLIENT_UPDATE_AND_RENDER(client_update_and_render_t);
 
 #include "client/client.cpp"
+#include "ai/ai.cpp"
 
-memory_arena total_memory, server_memory, client_memory;
-communication server_comm, client_comm;
-comm_memory_pipe server_pipe, client_pipe;
+#define NUM_AI 10
+
+memory_arena total_memory, server_memory, client_memory, ai_memory[NUM_AI];
+communication server_to_client_comm, client_to_server_comm, ai_to_server_comm[NUM_AI], server_to_ai_comm[NUM_AI];
+comm_memory_pipe server_to_client_pipe, client_to_server_pipe, server_to_ai_pipe[NUM_AI], ai_to_server_pipe[NUM_AI];
 
 client_update_and_render_t *client_update_and_render_ptr = &client_update_and_render;
 
@@ -36,34 +39,69 @@ u32 time_get_now_in_ms() {
 
 int main(int argc, char *argv[]) {
 
+    total_memory.name = "total_memory";
     total_memory.used = 0;
-    total_memory.max = MB(300);
+    total_memory.max = MB(2000);
     total_memory.base = (u8 *)malloc(total_memory.max);
     assert(total_memory.base);
     memset(total_memory.base, 0, total_memory.max);
 
-    server_memory = memory_arena_child(&total_memory, MB(100));
-    client_memory = memory_arena_child(&total_memory, MB(100));
+    server_memory = memory_arena_child(&total_memory, MB(100), "server_memory");
+    client_memory = memory_arena_child(&total_memory, MB(100), "client_memory");
 
-    ring_buffer<u8> server_mem_in = ring_buffer<u8>(&total_memory, MB(2));
-    ring_buffer<u8> server_mem_out = ring_buffer<u8>(&total_memory, MB(2));
+    ring_buffer<u8> server_to_client_ring_buffer = ring_buffer<u8>(&total_memory, MB(100));
+    ring_buffer<u8> client_to_server_ring_buffer = ring_buffer<u8>(&total_memory, MB(100));
 
-    server_pipe.in = &server_mem_in;
-    server_pipe.out = &server_mem_out;
 
-    client_pipe.in = &server_mem_out;
-    client_pipe.out = &server_mem_in;
+    server_to_client_pipe.in = &client_to_server_ring_buffer;
+    server_to_client_pipe.out = &server_to_client_ring_buffer;
 
-    comm_server_memory_init(&server_comm, &server_pipe, memory_arena_child(&total_memory, MB(1)));
-    comm_client_memory_init(&client_comm, &client_pipe, memory_arena_child(&total_memory, MB(1)));
+    client_to_server_pipe.in = &server_to_client_ring_buffer;
+    client_to_server_pipe.out = &client_to_server_ring_buffer;
+
+    comm_server_memory_init(&server_to_client_comm, &server_to_client_pipe, memory_arena_child(&total_memory, MB(100), "server_to_client_memory"));
+    comm_client_memory_init(&client_to_server_comm, &client_to_server_pipe, memory_arena_child(&total_memory, MB(100), "client_to_server_memory"));
+
+    communication server_comms[1 + NUM_AI];
+    server_comms[0] = server_to_client_comm;
+
+    ring_buffer<u8> *server_to_ai_ring_buffer = (ring_buffer<u8> *)malloc(sizeof(*server_to_ai_ring_buffer) * NUM_AI);
+    ring_buffer<u8> *ai_to_server_ring_buffer = (ring_buffer<u8> *)malloc(sizeof(*ai_to_server_ring_buffer) * NUM_AI);
+    for (u32 i = 0; i < NUM_AI; ++i) {
+        char *name = (char *)malloc(20);
+        snprintf(name, 20, "ai_memory_%u", i);
+        ai_memory[i] = memory_arena_child(&total_memory, MB(50), name);
+
+        server_to_ai_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(2));
+        ai_to_server_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(2));
+
+        server_to_ai_pipe[i].in = &ai_to_server_ring_buffer[i];
+        server_to_ai_pipe[i].out = &server_to_ai_ring_buffer[i];
+
+        ai_to_server_pipe[i].in = &server_to_ai_ring_buffer[i];
+        ai_to_server_pipe[i].out = &ai_to_server_ring_buffer[i];
+
+        name = (char *)malloc(20);
+        snprintf(name, 20, "server_to_ai_memory_%u", i);
+        comm_server_memory_init(&server_to_ai_comm[i], &server_to_ai_pipe[i], memory_arena_child(&total_memory, MB(1), name));
+        name = (char *)malloc(20);
+        snprintf(name, 20, "ai_to_server_memory_%u", i);
+        comm_client_memory_init(&ai_to_server_comm[i], &ai_to_server_pipe[i], memory_arena_child(&total_memory, MB(1), name));
+
+        server_comms[i + 1] = server_to_ai_comm[i];
+    }
+
+
 
     InitWindow(1280, 720, "Hello, world");
     SetTargetFPS(60);
 
     while(!WindowShouldClose()) {
-        server_update(&server_memory, &server_comm);
+        server_update(&server_memory, server_comms, 1 + NUM_AI);
 
-        client_update_and_render_ptr(&client_memory, &client_comm);
+        client_update_and_render_ptr(&client_memory, &client_to_server_comm);
+        for (u32 i = 0; i < NUM_AI; ++i)
+            ai_update(&ai_memory[i], &ai_to_server_comm[i]);
     }
 
     CloseWindow();
