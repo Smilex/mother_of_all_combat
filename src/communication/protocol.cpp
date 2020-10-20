@@ -208,5 +208,6 @@ struct comm_server_discover_body_tile {
 
 struct comm_server_discover_town_body {
     u32 id;
+    s32 owner;
     v2<u32> position;
 };

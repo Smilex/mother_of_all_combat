@@ -24,9 +24,15 @@ struct client_context {
         struct {
             v2<u32> *positions;
             u32 *server_ids;
+            s32 *owners;
             u32 used, max;
         } towns;
     } map;
+
+    struct {
+        Color *colors;
+        u32 max, used;
+    } clients;
 
     struct {
         u32 x, y;
@@ -61,6 +67,10 @@ void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 heigh
                                             );
     ctx->map.towns.server_ids = (u32 *)memory_arena_use(mem,
                                             sizeof(*ctx->map.towns.server_ids)
+                                            * ctx->map.towns.max
+                                            );
+    ctx->map.towns.owners = (s32 *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns.owners)
                                             * ctx->map.towns.max
                                             );
 }
@@ -111,7 +121,12 @@ void draw_map(client_context *ctx) {
         Y = pos.y * tile_height + tile_width / 2;
         X -= ctx->camera.x * tile_width;
         Y -= ctx->camera.y * tile_height;
-        DrawCircle(X, Y, tile_width / 2, RED);
+        
+        Color color = GRAY;
+        if (ctx->map.towns.owners[i] != -1) {
+            color = ctx->clients.colors[ctx->map.towns.owners[i]];
+        }
+        DrawCircle(X, Y, tile_width / 2, color);
     }
 }
 
@@ -121,6 +136,18 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
     if (!ctx->is_init) {
         memory_arena_use(mem, sizeof(*ctx));
         ctx->read_buffer = memory_arena_child(mem, MB(50), "client_memory_read");
+
+        ctx->clients.used = 0;
+        ctx->clients.max = 32;
+        ctx->clients.colors = (Color *)memory_arena_use(mem, sizeof(*ctx->clients.colors)
+                                                        * ctx->clients.max
+                                                        );
+        for (u32 i = 0; i < ctx->clients.max; ++i) {
+            u8 red = rand() % 255;
+            u8 green = rand() % 255;
+            u8 blue = rand() % 255;
+            ctx->clients.colors[i] = (Color){red, green, blue, 255};
+        }
 
         ctx->is_init = true;
     }
@@ -215,6 +242,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
                             u32 id = ctx->map.towns.used++;
                             ctx->map.towns.positions[id] = discover_town_body->position;
+                            ctx->map.towns.owners[id] = discover_town_body->owner;
                             ctx->map.towns.server_ids[id] = discover_town_body->id;
                         }
                     }

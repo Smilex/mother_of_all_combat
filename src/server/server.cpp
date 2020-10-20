@@ -22,6 +22,7 @@ struct server_context {
             terrain_height;
         struct {
             v2<u32> *positions;
+            s32 *owners;
             u32 used, max;
         } towns;
     } map;
@@ -160,7 +161,18 @@ void generate_map(server_context *ctx) {
 
         v2<u32> pos = {.x = iter_x, .y = iter_y};
         ctx->map.towns.positions[ctx->map.towns.used] = pos;
+        ctx->map.towns.owners[ctx->map.towns.used] = -1;
         ctx->map.towns.used++;
+    }
+
+    for (u32 i = 0; i < ctx->clients.used; ++i) {
+        for (;;) {
+            u32 town = rand() % ctx->map.towns.used;
+            if (ctx->map.towns.owners[town] == -1) {
+                ctx->map.towns.owners[town] = i;
+                break;
+            }
+        }
     }
 }
 
@@ -198,6 +210,7 @@ void send_entire_map(communication *comm, server_context *ctx) {
 
         comm_server_discover_town_body discover_town_body;
         discover_town_body.id = i;
+        discover_town_body.owner = ctx->map.towns.owners[i];
         discover_town_body.position = ctx->map.towns.positions[i];
         comm_write(comm, &discover_town_body, sizeof(discover_town_body));
     }
@@ -245,6 +258,10 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
         ctx->map.towns.max = 100;
         ctx->map.towns.positions = (v2<u32> *)memory_arena_use(mem,
                                                 sizeof(*ctx->map.towns.positions)
+                                                * ctx->map.towns.max
+                                                );
+        ctx->map.towns.owners = (s32 *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.towns.owners)
                                                 * ctx->map.towns.max
                                                 );
         generate_map(ctx);
