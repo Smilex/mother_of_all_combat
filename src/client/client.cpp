@@ -20,6 +20,12 @@ struct client_context {
     struct {
         u32 width, height;
         client_terrain_names *terrain;
+
+        struct {
+            v2<u32> *positions;
+            u32 *server_ids;
+            u32 used, max;
+        } towns;
     } map;
 
     struct {
@@ -34,6 +40,8 @@ client_terrain_names terrain_names_to_client_terrain_names(terrain_names name) {
         return client_terrain_names::GROUND;
     else if (name == terrain_names::WATER)
         return client_terrain_names::WATER;
+    else if (name == terrain_names::HILLS)
+        return client_terrain_names::HILLS;
 }
 
 void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 height) {
@@ -44,6 +52,17 @@ void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 heigh
                                                                     * ctx->map.width
                                                                     * ctx->map.height
                                                                 );
+
+    ctx->map.towns.used = 0;
+    ctx->map.towns.max = 100;
+    ctx->map.towns.positions = (v2<u32> *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns.positions)
+                                            * ctx->map.towns.max
+                                            );
+    ctx->map.towns.server_ids = (u32 *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns.server_ids)
+                                            * ctx->map.towns.max
+                                            );
 }
 
 void draw_map(client_context *ctx) {
@@ -75,13 +94,24 @@ void draw_map(client_context *ctx) {
             if (ctx->map.terrain[it] == client_terrain_names::FOG)
                 DrawRectangle(X, Y, tile_width, tile_height, BLACK);
             else if (ctx->map.terrain[it] == client_terrain_names::GROUND)
-                DrawRectangle(X, Y, tile_width, tile_height, GREEN);
+                DrawRectangle(X, Y, tile_width, tile_height, CLITERAL(Color){101, 252, 96, 255});
             else if (ctx->map.terrain[it] == client_terrain_names::WATER)
+                DrawRectangle(X, Y, tile_width, tile_height, CLITERAL(Color){255, 241, 171, 255});
+            else if (ctx->map.terrain[it] == client_terrain_names::HILLS)
                 DrawRectangle(X, Y, tile_width, tile_height, BLUE);
             X = X + tile_width;
         }
         X = 0;
         Y = Y + tile_height;
+    }
+
+    for (u32 i = 0; i < ctx->map.towns.used; ++i) {
+        v2<u32> pos = ctx->map.towns.positions[i];
+        X = pos.x * tile_width + tile_width / 2;
+        Y = pos.y * tile_height + tile_width / 2;
+        X -= ctx->camera.x * tile_width;
+        Y -= ctx->camera.y * tile_height;
+        DrawCircle(X, Y, tile_width / 2, RED);
     }
 }
 
@@ -177,6 +207,16 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         comm_client_header client_header;
                         client_header.name = comm_client_msg_names::PONG;
                         comm_write(comm, &client_header, sizeof(client_header));
+                    } else if (header->name == comm_server_msg_names::DISCOVER_TOWN) {
+                        comm_server_discover_town_body *discover_town_body;
+                        if (len - buf_it >= sizeof(*discover_town_body)) {
+                            discover_town_body = (comm_server_discover_town_body *)(ctx->read_buffer.base + buf_it);
+                            buf_it += sizeof(*discover_town_body);
+
+                            u32 id = ctx->map.towns.used++;
+                            ctx->map.towns.positions[id] = discover_town_body->position;
+                            ctx->map.towns.server_ids[id] = discover_town_body->id;
+                        }
                     }
                 }
             }

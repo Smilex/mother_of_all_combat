@@ -175,6 +175,7 @@ enum comm_server_msg_names {
     INIT_MAP = 0,
     DISCOVER,
     PING,
+    DISCOVER_TOWN
 };
 
 enum comm_client_msg_names {
@@ -203,4 +204,9 @@ struct comm_server_discover_body {
 struct comm_server_discover_body_tile {
     v2<u32> position;
     terrain_names name;
+};
+
+struct comm_server_discover_town_body {
+    u32 id;
+    v2<u32> position;
 };

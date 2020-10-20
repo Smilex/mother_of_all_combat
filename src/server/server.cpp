@@ -20,6 +20,10 @@ struct server_context {
         terrain_names *terrain;
         u32 terrain_width,
             terrain_height;
+        struct {
+            v2<u32> *positions;
+            u32 used, max;
+        } towns;
     } map;
     struct {
         communication *comms;
@@ -51,6 +55,7 @@ void generate_map(server_context *ctx) {
 
     // TODO: Find some better way to determine how many islands should be generated
     u32 num_islands = 50;
+    assert(num_islands <= ctx->map.towns.max);
     real32 min_radius = 4;
     v2<u32> *island_centers = (v2<u32> *)memory_arena_use(&ctx->temp_buffer, sizeof(*island_centers)
                                                             * num_islands);
@@ -67,7 +72,7 @@ void generate_map(server_context *ctx) {
     real32 *circles_map = (real32 *)memory_arena_use(&ctx->temp_buffer, size_of_circles_map);
     memset(circles_map, 0, size_of_circles_map);
 
-    real32 radius = 4.0f;
+    real32 radius = 3.0f;
     for (u32 i = 0; i < num_islands; ++i) {
         for (u32 y = 0; y < ctx->map.terrain_height; ++y) {
             for (u32 x = 0; x < ctx->map.terrain_height; ++x) {
@@ -88,13 +93,74 @@ void generate_map(server_context *ctx) {
     for (u32 y = 0; y < ctx->map.terrain_height; ++y) {
         for (u32 x = 0; x < ctx->map.terrain_height; ++x) {
             u32 idx = y * ctx->map.terrain_height + x;
-            real32 value = interpolate(noise_map[idx], circles_map[idx], 0.0);
-            if (value > 0.65) {
+            real32 value = interpolate(noise_map[idx], circles_map[idx], 1.0);
+            if (value > 0.6) {
+                ctx->map.terrain[idx] = terrain_names::HILLS;
+            } else if (value > 0.0) {
                 ctx->map.terrain[idx] = terrain_names::GROUND;
             } else {
                 ctx->map.terrain[idx] = terrain_names::WATER;
             }
         }
+    }
+
+    for (u32 i = 0; i < num_islands; ++i) {
+        real32 direction_rad = ((real32)rand() / RAND_MAX) * (M_PI * 2);
+        real32 direction_x = cosf(direction_rad);
+        real32 direction_y = sinf(direction_rad);
+        s32 dir_x = 0;
+        s32 dir_y = 0;
+        if (direction_x > 0.5)
+            dir_x = 1;
+        else if (direction_x < -0.5)
+            dir_x = -1;
+
+        if (direction_y > 0.5)
+            dir_y = 1;
+        else if (direction_y < -0.5)
+            dir_y = -1;
+
+        u32 iter_x = island_centers[i].x;
+        u32 iter_y = island_centers[i].y;
+        
+        bool stuck = false;
+        bool found = false;
+        while (!found && !stuck) {
+            if (dir_x == 1)
+                if(iter_x == ctx->map.terrain_width - 1)
+                    stuck = true;
+                else
+                    iter_x += dir_x;
+            if (dir_x == -1)
+                if (iter_x == 0)
+                    stuck = true;
+                else
+                    iter_x += dir_x;
+            if (dir_y == 1)
+                if (iter_y == ctx->map.terrain_height - 1)
+                    stuck = true;
+                else
+                    iter_y += dir_y;
+            if (dir_y == -1)
+                if (iter_y == 0)
+                    stuck = true;
+                else
+                    iter_y += dir_y;
+
+            u32 idx = iter_y * ctx->map.terrain_width + iter_x;
+            if (ctx->map.terrain[idx] == terrain_names::GROUND) {
+                found = true;
+            }
+        }
+
+        if (stuck) {
+            --i;
+            continue;
+        }
+
+        v2<u32> pos = {.x = iter_x, .y = iter_y};
+        ctx->map.towns.positions[ctx->map.towns.used] = pos;
+        ctx->map.towns.used++;
     }
 }
 
@@ -125,6 +191,16 @@ void send_entire_map(communication *comm, server_context *ctx) {
         }
     }
     comm_write(comm, tiles, size_of_tiles);
+
+    for (u32 i = 0; i < ctx->map.towns.used; ++i) {
+        header.name = comm_server_msg_names::DISCOVER_TOWN;
+        comm_write(comm, &header, sizeof(header));
+
+        comm_server_discover_town_body discover_town_body;
+        discover_town_body.id = i;
+        discover_town_body.position = ctx->map.towns.positions[i];
+        comm_write(comm, &discover_town_body, sizeof(discover_town_body));
+    }
 }
 
 void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
@@ -163,6 +239,13 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 sizeof(*ctx->map.terrain)
                                                 * ctx->map.terrain_width
                                                 * ctx->map.terrain_height
+                                                );
+
+        ctx->map.towns.used = 0;
+        ctx->map.towns.max = 100;
+        ctx->map.towns.positions = (v2<u32> *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.towns.positions)
+                                                * ctx->map.towns.max
                                                 );
         generate_map(ctx);
         
