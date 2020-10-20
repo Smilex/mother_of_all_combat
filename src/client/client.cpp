@@ -17,6 +17,8 @@ struct client_context {
     client_screen_names current_screen;
     memory_arena temp_mem, read_buffer;
 
+    u32 my_server_id;
+
     struct {
         u32 width, height;
         client_terrain_names *terrain;
@@ -181,8 +183,10 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         buf_it += sizeof(*header);
                         if (len - buf_it >= sizeof(*init_map_body)) {
                             init_map_body = (comm_server_init_map_body *)(ctx->read_buffer.base + buf_it);
+                            ctx->my_server_id = init_map_body->your_id;
                             initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
                             ctx->current_screen = client_screen_names::GAME;
+                            printf("INIT_EVERYBODY\n");
                         }
                     }
                 }
@@ -244,6 +248,11 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             ctx->map.towns.positions[id] = discover_town_body->position;
                             ctx->map.towns.owners[id] = discover_town_body->owner;
                             ctx->map.towns.server_ids[id] = discover_town_body->id;
+
+                            if (discover_town_body->owner == ctx->my_server_id) {
+                                ctx->camera.x = discover_town_body->position.x;
+                                ctx->camera.y = discover_town_body->position.y;
+                            }
                         }
                     }
                 }

@@ -301,11 +301,80 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
             comm_write(comm, &header, sizeof(header));
             
             comm_server_init_map_body init_map_body;
+            init_map_body.your_id = i;
             init_map_body.width = ctx->map.terrain_width;
             init_map_body.height = ctx->map.terrain_height;
             comm_write(comm, &init_map_body, sizeof(init_map_body));
 
             comm_flush(&ctx->clients.comms[i]);
+
+            for (u32 j = 0; j < ctx->map.towns.used; ++j) {
+                if (ctx->map.towns.owners[j] == i) {
+                    comm_server_discover_body discover_body;
+                    comm_server_discover_town_body discover_town_body;
+                    comm_server_discover_body_tile *discover_body_tiles;
+
+                    header.name = comm_server_msg_names::DISCOVER;
+                    comm_write(comm, &header, sizeof(header));
+
+                    u32 num = 0;
+                    v2<u32> pos = ctx->map.towns.positions[j];
+                    discover_body_tiles = (comm_server_discover_body_tile *)(ctx->temp_buffer.base + ctx->temp_buffer.used);
+
+                    u32 idx = pos.y * ctx->map.terrain_width + pos.x;
+                    discover_body_tiles[num].name = ctx->map.terrain[idx];
+                    discover_body_tiles[num].position = pos;
+                    ++num;
+
+                    if (pos.x > 0) {
+                        v2<u32> p = pos;
+                        p.x -= 1;
+                        idx = p.y * ctx->map.terrain_width + p.x; 
+                        discover_body_tiles[num].name = ctx->map.terrain[idx];
+                        discover_body_tiles[num].position = p;
+                        ++num;
+                    }
+
+                    if (pos.x < ctx->map.terrain_width - 1) {
+                        v2<u32> p = pos;
+                        p.x += 1;
+                        idx = p.y * ctx->map.terrain_width + p.x; 
+                        discover_body_tiles[num].name = ctx->map.terrain[idx];
+                        discover_body_tiles[num].position = p;
+                        ++num;
+                    }
+
+                    if (pos.y > 0) {
+                        v2<u32> p = pos;
+                        p.y -= 1;
+                        idx = p.y * ctx->map.terrain_width + p.x; 
+                        discover_body_tiles[num].name = ctx->map.terrain[idx];
+                        discover_body_tiles[num].position = p;
+                        ++num;
+                    }
+
+                    if (pos.y < ctx->map.terrain_height - 1) {
+                        v2<u32> p = pos;
+                        p.y += 1;
+                        idx = p.y * ctx->map.terrain_width + p.x; 
+                        discover_body_tiles[num].name = ctx->map.terrain[idx];
+                        discover_body_tiles[num].position = p;
+                        ++num;
+                    }
+
+                    discover_body.num = num;
+                    comm_write(comm, &discover_body, sizeof(discover_body));
+                    comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
+                    header.name = comm_server_msg_names::DISCOVER_TOWN;
+                    comm_write(comm, &header, sizeof(header));
+                    discover_town_body.position = pos;
+                    discover_town_body.id = j;
+                    discover_town_body.owner = ctx->map.towns.owners[j];
+                    comm_write(comm, &discover_town_body, sizeof(discover_town_body));
+
+                    comm_flush(comm);
+                }
+            }
         }
 
         ctx->current_state = server_state_names::LOOP;

@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
 
     total_memory.name = "total_memory";
     total_memory.used = 0;
-    total_memory.max = MB(2000);
+    total_memory.max = GB(2);
     total_memory.base = (u8 *)malloc(total_memory.max);
     assert(total_memory.base);
     memset(total_memory.base, 0, total_memory.max);
@@ -68,12 +68,12 @@ int main(int argc, char *argv[]) {
     ring_buffer<u8> *server_to_ai_ring_buffer = (ring_buffer<u8> *)malloc(sizeof(*server_to_ai_ring_buffer) * NUM_AI);
     ring_buffer<u8> *ai_to_server_ring_buffer = (ring_buffer<u8> *)malloc(sizeof(*ai_to_server_ring_buffer) * NUM_AI);
     for (u32 i = 0; i < NUM_AI; ++i) {
-        char *name = (char *)malloc(20);
-        snprintf(name, 20, "ai_memory_%u", i);
-        ai_memory[i] = memory_arena_child(&total_memory, MB(50), name);
+        char *name = (char *)malloc(50);
+        snprintf(name, 50, "ai_memory_%u", i);
+        ai_memory[i] = memory_arena_child(&total_memory, MB(20), name);
 
-        server_to_ai_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(2));
-        ai_to_server_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(2));
+        server_to_ai_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(5));
+        ai_to_server_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(5));
 
         server_to_ai_pipe[i].in = &ai_to_server_ring_buffer[i];
         server_to_ai_pipe[i].out = &server_to_ai_ring_buffer[i];
@@ -81,12 +81,12 @@ int main(int argc, char *argv[]) {
         ai_to_server_pipe[i].in = &server_to_ai_ring_buffer[i];
         ai_to_server_pipe[i].out = &ai_to_server_ring_buffer[i];
 
-        name = (char *)malloc(20);
-        snprintf(name, 20, "server_to_ai_memory_%u", i);
-        comm_server_memory_init(&server_to_ai_comm[i], &server_to_ai_pipe[i], memory_arena_child(&total_memory, MB(1), name));
-        name = (char *)malloc(20);
-        snprintf(name, 20, "ai_to_server_memory_%u", i);
-        comm_client_memory_init(&ai_to_server_comm[i], &ai_to_server_pipe[i], memory_arena_child(&total_memory, MB(1), name));
+        name = (char *)malloc(50);
+        snprintf(name, 50, "server_to_ai_memory_%u", i);
+        comm_server_memory_init(&server_to_ai_comm[i], &server_to_ai_pipe[i], memory_arena_child(&total_memory, MB(20), name));
+        name = (char *)malloc(50);
+        snprintf(name, 50, "ai_to_server_memory_%u", i);
+        comm_client_memory_init(&ai_to_server_comm[i], &ai_to_server_pipe[i], memory_arena_child(&total_memory, MB(20), name));
 
         server_comms[i + 1] = server_to_ai_comm[i];
     }

@@ -13,7 +13,19 @@ struct ai_context {
     struct {
         u32 width, height;
         client_terrain_names *terrain;
+
+        struct {
+            v2<u32> *positions;
+            u32 *server_ids;
+            s32 *owners;
+            u32 used, max;
+        } towns;
     } map;
+
+    struct {
+        Color *colors;
+        u32 max, used;
+    } clients;
 };
 
 void ai_initialize_map(ai_context *ctx, memory_arena *mem, u32 width, u32 height) {
@@ -24,6 +36,20 @@ void ai_initialize_map(ai_context *ctx, memory_arena *mem, u32 width, u32 height
                                                                     * ctx->map.width
                                                                     * ctx->map.height
                                                                 );
+    ctx->map.towns.used = 0;
+    ctx->map.towns.max = 100;
+    ctx->map.towns.positions = (v2<u32> *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns.positions)
+                                            * ctx->map.towns.max
+                                            );
+    ctx->map.towns.server_ids = (u32 *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns.server_ids)
+                                            * ctx->map.towns.max
+                                            );
+    ctx->map.towns.owners = (s32 *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns.owners)
+                                            * ctx->map.towns.max
+                                            );
 }
 
 void ai_update(memory_arena *mem, communication *comm) {
@@ -32,6 +58,18 @@ void ai_update(memory_arena *mem, communication *comm) {
     if (!ctx->is_init) {
         memory_arena_use(mem, sizeof(*ctx));
         ctx->read_buffer = memory_arena_child(mem, MB(10), "ai_memory_read");
+
+        ctx->clients.used = 0;
+        ctx->clients.max = 32;
+        ctx->clients.colors = (Color *)memory_arena_use(mem, sizeof(*ctx->clients.colors)
+                                                        * ctx->clients.max
+                                                        );
+        for (u32 i = 0; i < ctx->clients.max; ++i) {
+            u8 red = rand() % 255;
+            u8 green = rand() % 255;
+            u8 blue = rand() % 255;
+            ctx->clients.colors[i] = (Color){red, green, blue, 255};
+        }
 
         ctx->current_state = ai_state_names::CONNECT;
         ctx->is_init = true;
@@ -76,10 +114,21 @@ void ai_update(memory_arena *mem, communication *comm) {
                         discover_body = (comm_server_discover_body *)(ctx->read_buffer.base + buf_it);
                         buf_it += sizeof(*discover_body);
                         for (u32 i = 0; i < discover_body->num; ++i) {
-                            v2<u32> *pos = (v2<u32> *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*pos);
-                            ctx->map.terrain[pos->y * ctx->map.width + pos->x] = client_terrain_names::GROUND;
-                        }
+                            comm_server_discover_body_tile *tile = (comm_server_discover_body_tile *)(ctx->read_buffer.base + buf_it);
+                            buf_it += sizeof(*tile);
+                            ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] = terrain_names_to_client_terrain_names(tile->name);
+                    }
+                    }
+                } else if (header->name == comm_server_msg_names::DISCOVER_TOWN) {
+                    comm_server_discover_town_body *discover_town_body;
+                    if (len - buf_it >= sizeof(*discover_town_body)) {
+                        discover_town_body = (comm_server_discover_town_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*discover_town_body);
+
+                        u32 id = ctx->map.towns.used++;
+                        ctx->map.towns.positions[id] = discover_town_body->position;
+                        ctx->map.towns.owners[id] = discover_town_body->owner;
+                        ctx->map.towns.server_ids[id] = discover_town_body->id;
                     }
                 } else if (header->name == comm_server_msg_names::PING) {
                     comm_client_header client_header;
@@ -90,5 +139,7 @@ void ai_update(memory_arena *mem, communication *comm) {
         }
     }
 
-    comm_flush(comm);
+    if (!comm_flush(comm)) {
+        printf("AI disconnected\n");
+    }
 }

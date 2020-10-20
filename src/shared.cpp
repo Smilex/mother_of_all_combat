@@ -2,8 +2,9 @@
 #include <assert.h>
 #include <time.h>
 
-#define KB(x) (x * 1024)
-#define MB(x) (KB(x) * 1024)
+#define KB(x) (x * 1024L)
+#define MB(x) (KB(x) * 1024L)
+#define GB(x) (MB(x) * 1024L)
 
 typedef uint32_t u32;
 typedef uint8_t u8;

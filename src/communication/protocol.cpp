@@ -194,6 +194,7 @@ struct comm_server_header {
 };
 
 struct comm_server_init_map_body {
+    u32 your_id;
     u32 width, height;
 };
 
