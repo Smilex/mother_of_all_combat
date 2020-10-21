@@ -34,6 +34,64 @@ struct server_context {
     } clients;
 };
 
+void discover_star(communication *comm, server_context *ctx, v2<u32> center) {
+    comm_server_header header;
+    comm_server_discover_body discover_body;
+    comm_server_discover_body_tile *discover_body_tiles;
+
+    header.name = comm_server_msg_names::DISCOVER;
+    comm_write(comm, &header, sizeof(header));
+
+    u32 num = 0;
+    v2<u32> pos = center;
+    discover_body_tiles = (comm_server_discover_body_tile *)(ctx->temp_buffer.base + ctx->temp_buffer.used);
+
+    u32 idx = pos.y * ctx->map.terrain_width + pos.x;
+    discover_body_tiles[num].name = ctx->map.terrain[idx];
+    discover_body_tiles[num].position = pos;
+    ++num;
+
+    if (pos.x > 0) {
+        v2<u32> p = pos;
+        p.x -= 1;
+        idx = p.y * ctx->map.terrain_width + p.x; 
+        discover_body_tiles[num].name = ctx->map.terrain[idx];
+        discover_body_tiles[num].position = p;
+        ++num;
+    }
+
+    if (pos.x < ctx->map.terrain_width - 1) {
+        v2<u32> p = pos;
+        p.x += 1;
+        idx = p.y * ctx->map.terrain_width + p.x; 
+        discover_body_tiles[num].name = ctx->map.terrain[idx];
+        discover_body_tiles[num].position = p;
+        ++num;
+    }
+
+    if (pos.y > 0) {
+        v2<u32> p = pos;
+        p.y -= 1;
+        idx = p.y * ctx->map.terrain_width + p.x; 
+        discover_body_tiles[num].name = ctx->map.terrain[idx];
+        discover_body_tiles[num].position = p;
+        ++num;
+    }
+
+    if (pos.y < ctx->map.terrain_height - 1) {
+        v2<u32> p = pos;
+        p.y += 1;
+        idx = p.y * ctx->map.terrain_width + p.x; 
+        discover_body_tiles[num].name = ctx->map.terrain[idx];
+        discover_body_tiles[num].position = p;
+        ++num;
+    }
+
+    discover_body.num = num;
+    comm_write(comm, &discover_body, sizeof(discover_body));
+    comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
+}
+
 void discover_3x3(communication *comm, server_context *ctx, v2<u32> center) {
     comm_server_header header;
     comm_server_discover_body discover_body;
