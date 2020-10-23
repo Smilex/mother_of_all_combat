@@ -18,6 +18,7 @@ struct client_context {
     memory_arena temp_mem, read_buffer;
 
     u32 my_server_id;
+    bool my_turn;
 
     struct {
         u32 width, height;
@@ -39,6 +40,19 @@ struct client_context {
     struct {
         u32 x, y;
     } camera;
+
+    s32 selected_town_id;
+
+    struct {
+        struct {
+            Rectangle rect;
+            char *build_names[2];
+            s32 build_active;
+        } town;
+        struct {
+            Rectangle rect;
+        } admin;
+    } gui;
 };
 
 client_terrain_names terrain_names_to_client_terrain_names(terrain_names name) {
@@ -129,6 +143,11 @@ void draw_map(client_context *ctx) {
             color = ctx->clients.colors[ctx->map.towns.owners[i]];
         }
         DrawCircle(X, Y, tile_width / 2, color);
+
+        if (ctx->selected_town_id == (s32)i) {
+            DrawRectangleLines(X - tile_width / 2, Y - tile_height / 2,
+                                tile_width, tile_height, RED);
+        }
     }
 }
 
@@ -150,6 +169,14 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
             u8 blue = rand() % 255;
             ctx->clients.colors[i] = (Color){red, green, blue, 255};
         }
+
+        ctx->selected_town_id = -1;
+
+        ctx->gui.town.rect = (Rectangle){GetScreenWidth() - 200, 0, 200, GetScreenHeight() / 2};
+        ctx->gui.town.build_names[0] = "None";
+        ctx->gui.town.build_names[1] = "Soldier";
+
+        ctx->gui.admin.rect = (Rectangle){GetScreenWidth() - 200, GetScreenHeight() / 2, 200, GetScreenHeight() / 2};
 
         ctx->is_init = true;
     }
@@ -216,6 +243,25 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 }
             }
 
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                Vector2 mouse_pos = GetMousePosition();
+                v2<u32> mouse_tile_pos;
+                real32 tile_width = 32.0f;
+                real32 tile_height = 32.0f;
+                mouse_tile_pos.x = (u32)floor(mouse_pos.x / tile_width);
+                mouse_tile_pos.y = (u32)floor(mouse_pos.y / tile_height);
+                mouse_tile_pos.x += ctx->camera.x;
+                mouse_tile_pos.y += ctx->camera.y;
+
+                for (u32 i = 0; i < ctx->map.towns.used; ++i) {
+                    if (mouse_tile_pos.x == ctx->map.towns.positions[i].x &&
+                        mouse_tile_pos.y == ctx->map.towns.positions[i].y) {
+                        ctx->selected_town_id = i;
+                        break;
+                    }
+                }
+            }
+
             comm_server_header *header;
             s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
             u32 buf_it = sizeof(comm_shared_header);
@@ -254,16 +300,51 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                                 ctx->camera.y = discover_town_body->position.y;
                             }
                         }
+                    } else if (header->name == comm_server_msg_names::YOUR_TURN) {
+                        ctx->my_turn = true;
                     }
                 }
             }
             draw_map(ctx);
 
-            if (GuiButton((Rectangle){scr_width / 2 - 150 / 2, scr_height / 2 - 15, 150, 30}, "DISCOVER")) {
+            if (GuiButton((Rectangle){scr_width / 2 - 60, scr_height - 30, 120, 30}, "END TURN")) {
                 comm_client_header header;
-                header.name = comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP;
+                header.name = comm_client_msg_names::END_TURN;
 
                 comm_write(comm, &header, sizeof(header));
+
+                ctx->my_turn = false;
+            }
+
+
+
+            if (ctx->selected_town_id != -1) {
+                Rectangle town_window = ctx->gui.town.rect;
+                bool close = GuiWindowBox(town_window, "Town");
+                GuiLabel((Rectangle){town_window.x + 10, town_window.y + 30, town_window.width - 20, 20}, "Build:");
+                s32 prev_active = ctx->gui.town.build_active;
+                ctx->gui.town.build_active = GuiToggleGroup((Rectangle){town_window.x + 20, town_window.y + 50, town_window.width - 40, 30}, TextJoin((const char**)ctx->gui.town.build_names, 2, "\n"), ctx->gui.town.build_active);
+                if (prev_active != ctx->gui.town.build_active) {
+                }
+
+                if (close) {
+                    ctx->selected_town_id = -1;
+                }
+            }
+
+            Rectangle admin_window = ctx->gui.admin.rect;
+            GuiWindowBox(admin_window, "Admin");
+                if (GuiButton((Rectangle){admin_window.x + 10, admin_window.y + 30, admin_window.width - 20, 20}, "DISCOVER")) {
+                    comm_client_header header;
+                    header.name = comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP;
+
+                    comm_write(comm, &header, sizeof(header));
+                }
+
+            if (!ctx->my_turn) {
+                Rectangle window = (Rectangle){scr_width / 2 - 150, scr_height / 2 - 30, 300, 60};
+                GuiWindowBox(window, "Status");
+                    GuiLabel((Rectangle){window.x + 100, window.y + 25, window.width - 200, window.height - 25}, "Waiting on your turn");
             }
         }
     EndDrawing();

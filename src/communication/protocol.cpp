@@ -175,7 +175,8 @@ enum comm_server_msg_names {
     INIT_MAP = 0,
     DISCOVER,
     PING,
-    DISCOVER_TOWN
+    DISCOVER_TOWN,
+	YOUR_TURN
 };
 
 enum comm_client_msg_names {
@@ -183,6 +184,7 @@ enum comm_client_msg_names {
     START,
     PONG,
     ADMIN_DISCOVER_ENTIRE_MAP,
+	END_TURN
 };
 
 struct comm_client_header {

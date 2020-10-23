@@ -134,6 +134,10 @@ void ai_update(memory_arena *mem, communication *comm) {
                     comm_client_header client_header;
                     client_header.name = comm_client_msg_names::PONG;
                     comm_write(comm, &client_header, sizeof(client_header));
+                } else if (header->name == comm_server_msg_names::YOUR_TURN) {
+                    comm_client_header client_header;
+                    client_header.name = comm_client_msg_names::END_TURN;
+                    comm_write(comm, &client_header, sizeof(client_header));
                 }
             }
         }

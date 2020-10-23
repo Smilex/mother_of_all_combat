@@ -15,6 +15,7 @@ struct server_context {
 
     memory_arena temp_buffer, read_buffer;
     server_state_names current_state;
+    s32 current_turn_id;
 
     struct {
         terrain_names *terrain;
@@ -26,6 +27,7 @@ struct server_context {
             u32 used, max;
         } towns;
     } map;
+
     struct {
         communication *comms;
         bool *admins;
@@ -421,6 +423,8 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 * ctx->map.towns.max
                                                 );
         generate_map(ctx);
+
+        ctx->current_turn_id = -1;
         
         ctx->is_init = true;
     }
@@ -480,6 +484,12 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                     comm_flush(comm);
                 }
             }
+
+			if (i == 0) {
+                ctx->current_turn_id = i;
+                header.name = comm_server_msg_names::YOUR_TURN;
+                comm_write(comm, &header, sizeof(header));
+			}
         }
 
         ctx->current_state = server_state_names::LOOP;
@@ -498,6 +508,15 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                     } else if (header->name == comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP) {
                         if (ctx->clients.admins[i]) {
                             send_entire_map(comm, ctx);
+                        }
+                    } else if (header->name == comm_client_msg_names::END_TURN) {
+                        if ((s32)i == ctx->current_turn_id) {
+                            ctx->current_turn_id = ctx->current_turn_id % ctx->clients.used;
+                            communication *c = &ctx->clients.comms[ctx->current_turn_id];
+                            
+                            comm_server_header head;
+                            head.name = comm_server_msg_names::YOUR_TURN;
+                            comm_write(c, &head, sizeof(head));
                         }
                     }
                 }
