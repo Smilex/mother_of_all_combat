@@ -23,6 +23,7 @@ struct server_context {
             terrain_height;
         struct {
             v2<u32> *positions;
+            unit_names *constructions;
             s32 *owners;
             u32 used, max;
         } towns;
@@ -320,6 +321,7 @@ void generate_map(server_context *ctx) {
         v2<u32> pos = {.x = iter_x, .y = iter_y};
         ctx->map.towns.positions[ctx->map.towns.used] = pos;
         ctx->map.towns.owners[ctx->map.towns.used] = -1;
+        ctx->map.towns.constructions[ctx->map.towns.used] = unit_names::NONE;
         ctx->map.towns.used++;
     }
 
@@ -422,6 +424,10 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 sizeof(*ctx->map.towns.owners)
                                                 * ctx->map.towns.max
                                                 );
+        ctx->map.towns.constructions = (unit_names *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.towns.constructions)
+                                                * ctx->map.towns.max
+                                                );
         generate_map(ctx);
 
         ctx->current_turn_id = -1;
@@ -517,6 +523,25 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                             comm_server_header head;
                             head.name = comm_server_msg_names::YOUR_TURN;
                             comm_write(c, &head, sizeof(head));
+                        }
+                    } else if (header->name == comm_client_msg_names::SET_CONSTRUCTION) {
+                        if (ctx->current_turn_id == i) {
+                            comm_client_set_construction_body *body =
+                                (comm_client_set_construction_body *)(ctx->read_buffer.base + read_it);
+                            read_it += sizeof(*body);
+                            s32 owner = ctx->map.towns.owners[body->town_id];
+                            if (owner == i) {
+                                ctx->map.towns.constructions[body->town_id] = body->unit_name;
+
+                                comm_server_header head;
+                                head.name = comm_server_msg_names::CONSTRUCTION_SET;
+                                comm_write(comm, &head, sizeof(head));
+
+                                comm_server_construction_set_body b;
+                                b.town_id = body->town_id;
+                                b.unit_name = body->unit_name;
+                                comm_write(comm, &b, sizeof(b));
+                            }
                         }
                     }
                 }

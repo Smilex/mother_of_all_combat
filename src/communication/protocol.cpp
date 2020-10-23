@@ -176,7 +176,8 @@ enum comm_server_msg_names {
     DISCOVER,
     PING,
     DISCOVER_TOWN,
-	YOUR_TURN
+	YOUR_TURN,
+    CONSTRUCTION_SET
 };
 
 enum comm_client_msg_names {
@@ -184,7 +185,8 @@ enum comm_client_msg_names {
     START,
     PONG,
     ADMIN_DISCOVER_ENTIRE_MAP,
-	END_TURN
+	END_TURN,
+    SET_CONSTRUCTION
 };
 
 struct comm_client_header {
@@ -213,4 +215,14 @@ struct comm_server_discover_town_body {
     u32 id;
     s32 owner;
     v2<u32> position;
+};
+
+struct comm_server_construction_set_body {
+    u32 town_id;
+    unit_names unit_name;
+};
+
+struct comm_client_set_construction_body {
+    u32 town_id;
+    unit_names unit_name;
 };

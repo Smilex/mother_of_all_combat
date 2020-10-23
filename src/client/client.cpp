@@ -27,6 +27,7 @@ struct client_context {
         struct {
             v2<u32> *positions;
             u32 *server_ids;
+            unit_names *constructions;
             s32 *owners;
             u32 used, max;
         } towns;
@@ -87,6 +88,10 @@ void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 heigh
                                             );
     ctx->map.towns.owners = (s32 *)memory_arena_use(mem,
                                             sizeof(*ctx->map.towns.owners)
+                                            * ctx->map.towns.max
+                                            );
+    ctx->map.towns.constructions = (unit_names *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns.constructions)
                                             * ctx->map.towns.max
                                             );
 }
@@ -257,6 +262,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                     if (mouse_tile_pos.x == ctx->map.towns.positions[i].x &&
                         mouse_tile_pos.y == ctx->map.towns.positions[i].y) {
                         ctx->selected_town_id = i;
+                        ctx->gui.town.build_active = (s32)ctx->map.towns.constructions[i];
                         break;
                     }
                 }
@@ -302,6 +308,21 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         }
                     } else if (header->name == comm_server_msg_names::YOUR_TURN) {
                         ctx->my_turn = true;
+                    } else if (header->name == comm_server_msg_names::CONSTRUCTION_SET) {
+                        comm_server_construction_set_body *construction_set_body;
+                        if (len - buf_it >= sizeof(*construction_set_body)) {
+                            construction_set_body = (comm_server_construction_set_body *)(ctx->read_buffer.base + buf_it);
+                            buf_it += sizeof(*construction_set_body);
+
+                            for (u32 i = 0; i < ctx->map.towns.used; ++i) {
+                                if (ctx->map.towns.server_ids[i] == construction_set_body->town_id) {
+                                    ctx->map.towns.constructions[i] = construction_set_body->unit_name;
+                                }
+                            }
+                            if (ctx->selected_town_id != -1 && ctx->map.towns.server_ids[ctx->selected_town_id] == construction_set_body->town_id) {
+                                ctx->gui.town.build_active = (s32)construction_set_body->unit_name;
+                            }
+                        }
                     }
                 }
             }
@@ -323,8 +344,18 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 bool close = GuiWindowBox(town_window, "Town");
                 GuiLabel((Rectangle){town_window.x + 10, town_window.y + 30, town_window.width - 20, 20}, "Build:");
                 s32 prev_active = ctx->gui.town.build_active;
-                ctx->gui.town.build_active = GuiToggleGroup((Rectangle){town_window.x + 20, town_window.y + 50, town_window.width - 40, 30}, TextJoin((const char**)ctx->gui.town.build_names, 2, "\n"), ctx->gui.town.build_active);
-                if (prev_active != ctx->gui.town.build_active) {
+                s32 curr_active = GuiToggleGroup((Rectangle){town_window.x + 20, town_window.y + 50, town_window.width - 40, 30}, TextJoin((const char**)ctx->gui.town.build_names, 2, "\n"), ctx->gui.town.build_active);
+                if (prev_active != curr_active) {
+                    comm_client_header header;
+                    header.name = comm_client_msg_names::SET_CONSTRUCTION;
+
+                    comm_write(comm, &header, sizeof(header));
+
+                    comm_client_set_construction_body body;
+                    body.town_id = ctx->map.towns.server_ids[ctx->selected_town_id];
+                    body.unit_name = (unit_names)curr_active;
+
+                    comm_write(comm, &body, sizeof(body));
                 }
 
                 if (close) {

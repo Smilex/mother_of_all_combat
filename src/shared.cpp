@@ -43,6 +43,11 @@ enum terrain_names {
     HILLS
 };
 
+enum class unit_names {
+    NONE,
+    SOLDIER
+};
+
 u32 time_get_now_in_ms();
 
 struct memory_arena {
