@@ -138,6 +138,12 @@ void ai_update(memory_arena *mem, communication *comm) {
                     comm_client_header client_header;
                     client_header.name = comm_client_msg_names::END_TURN;
                     comm_write(comm, &client_header, sizeof(client_header));
+                } else if (header->name == comm_server_msg_names::ADD_UNIT) {
+                    comm_server_add_unit_body *add_unit_body;
+                    if (len - buf_it >= sizeof(*add_unit_body)) {
+                        add_unit_body = (comm_server_add_unit_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*add_unit_body);
+                    }
                 }
             }
         }

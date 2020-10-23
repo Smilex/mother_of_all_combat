@@ -31,6 +31,13 @@ struct client_context {
             s32 *owners;
             u32 used, max;
         } towns;
+
+        struct {
+            v2<u32> *positions;
+            unit_names *names;
+            s32 *owners;
+            u32 used, max;
+        } units;
     } map;
 
     struct {
@@ -42,7 +49,8 @@ struct client_context {
         u32 x, y;
     } camera;
 
-    s32 selected_town_id;
+    s32 selected_town_id,
+        selected_unit_id;
 
     struct {
         struct {
@@ -93,6 +101,21 @@ void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 heigh
     ctx->map.towns.constructions = (unit_names *)memory_arena_use(mem,
                                             sizeof(*ctx->map.towns.constructions)
                                             * ctx->map.towns.max
+                                            );
+
+    ctx->map.units.used = 0;
+    ctx->map.units.max = 1000;
+    ctx->map.units.positions = (v2<u32> *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.units.positions)
+                                            * ctx->map.units.max
+                                            );
+    ctx->map.units.names = (unit_names *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.units.names)
+                                            * ctx->map.units.max
+                                            );
+    ctx->map.units.owners = (s32 *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.units.owners)
+                                            * ctx->map.units.max
                                             );
 }
 
@@ -154,6 +177,25 @@ void draw_map(client_context *ctx) {
                                 tile_width, tile_height, RED);
         }
     }
+
+    for (u32 i = 0; i < ctx->map.units.used; ++i) {
+        v2<u32> pos = ctx->map.units.positions[i];
+        X = pos.x * tile_width;
+        Y = pos.y * tile_height;
+        X -= ctx->camera.x * tile_width;
+        Y -= ctx->camera.y * tile_height;
+
+        Color color = ctx->clients.colors[ctx->map.units.owners[i]];
+        Vector2 bottom_left = (Vector2){.x = X, .y = Y + tile_height};
+        Vector2 top_middle = (Vector2){.x = X + tile_width / 2, .y = Y};
+        Vector2 bottom_right = (Vector2){.x = X + tile_width, .y = Y + tile_height};
+        DrawTriangle(bottom_left, bottom_right, top_middle, color);
+
+        if (ctx->selected_unit_id == (s32)i) {
+            DrawTriangleLines(bottom_left, bottom_right,
+                                top_middle, RED);
+        }
+    }
 }
 
 CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
@@ -176,6 +218,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
         }
 
         ctx->selected_town_id = -1;
+        ctx->selected_unit_id = -1;
 
         ctx->gui.town.rect = (Rectangle){GetScreenWidth() - 200, 0, 200, GetScreenHeight() / 2};
         ctx->gui.town.build_names[0] = "None";
@@ -258,12 +301,28 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 mouse_tile_pos.x += ctx->camera.x;
                 mouse_tile_pos.y += ctx->camera.y;
 
-                for (u32 i = 0; i < ctx->map.towns.used; ++i) {
-                    if (mouse_tile_pos.x == ctx->map.towns.positions[i].x &&
-                        mouse_tile_pos.y == ctx->map.towns.positions[i].y) {
-                        ctx->selected_town_id = i;
-                        ctx->gui.town.build_active = (s32)ctx->map.towns.constructions[i];
+                bool found = false;
+                for (u32 i = 0; i < ctx->map.units.used; ++i) {
+                    if (mouse_tile_pos.x == ctx->map.units.positions[i].x &&
+                        mouse_tile_pos.y == ctx->map.units.positions[i].y) {
+                        if (ctx->selected_unit_id == i) {
+                            ctx->selected_unit_id = -1;
+                        } else {
+                            ctx->selected_town_id = -1;
+                            ctx->selected_unit_id = i;
+                            found = true;
+                        }
                         break;
+                    }
+                }
+                if (!found) {
+                    for (u32 i = 0; i < ctx->map.towns.used; ++i) {
+                        if (mouse_tile_pos.x == ctx->map.towns.positions[i].x &&
+                            mouse_tile_pos.y == ctx->map.towns.positions[i].y) {
+                            ctx->selected_town_id = i;
+                            ctx->gui.town.build_active = (s32)ctx->map.towns.constructions[i];
+                            break;
+                        }
                     }
                 }
             }
@@ -322,6 +381,19 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             if (ctx->selected_town_id != -1 && ctx->map.towns.server_ids[ctx->selected_town_id] == construction_set_body->town_id) {
                                 ctx->gui.town.build_active = (s32)construction_set_body->unit_name;
                             }
+                        }
+                    } else if (header->name == comm_server_msg_names::ADD_UNIT) {
+                        comm_server_add_unit_body *add_unit_body;
+                        if (len - buf_it >= sizeof(*add_unit_body)) {
+                            add_unit_body = (comm_server_add_unit_body *)(ctx->read_buffer.base + buf_it);
+                            buf_it += sizeof(*add_unit_body);
+
+                            u32 id = ctx->map.units.used++;
+                            ctx->map.units.positions[id] = add_unit_body->position;
+                            ctx->map.units.names[id] = add_unit_body->unit_name;
+                            ctx->map.units.owners[id] = ctx->my_server_id;
+
+                            printf("ADD_UNIT (%d, %d)\n", ctx->map.units.positions[id].x, ctx->map.units.positions[id].y);
                         }
                     }
                 }

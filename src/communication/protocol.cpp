@@ -177,7 +177,8 @@ enum comm_server_msg_names {
     PING,
     DISCOVER_TOWN,
 	YOUR_TURN,
-    CONSTRUCTION_SET
+    CONSTRUCTION_SET,
+    ADD_UNIT
 };
 
 enum comm_client_msg_names {
@@ -225,4 +226,9 @@ struct comm_server_construction_set_body {
 struct comm_client_set_construction_body {
     u32 town_id;
     unit_names unit_name;
+};
+
+struct comm_server_add_unit_body {
+    unit_names unit_name;
+    v2<u32> position;
 };

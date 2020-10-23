@@ -487,6 +487,14 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                     discover_town_body.owner = ctx->map.towns.owners[j];
                     comm_write(comm, &discover_town_body, sizeof(discover_town_body));
 
+                    header.name = comm_server_msg_names::ADD_UNIT;
+                    comm_write(comm, &header, sizeof(header));
+
+                    comm_server_add_unit_body add_unit_body;
+                    add_unit_body.position = ctx->map.towns.positions[j];
+                    add_unit_body.unit_name = unit_names::SOLDIER;
+                    comm_write(comm, &add_unit_body, sizeof(add_unit_body));
+
                     comm_flush(comm);
                 }
             }
