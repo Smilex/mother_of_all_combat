@@ -27,6 +27,12 @@ struct server_context {
             s32 *owners;
             u32 used, max;
         } towns;
+        struct {
+            v2<u32> *positions;
+            unit_names *names;
+            s32 *owners;
+            u32 used, max;
+        } units;
     } map;
 
     struct {
@@ -428,6 +434,24 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 sizeof(*ctx->map.towns.constructions)
                                                 * ctx->map.towns.max
                                                 );
+        ctx->map.units.used = 0;
+        ctx->map.units.max = 10000;
+        ctx->map.units.positions = (v2<u32> *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.units.positions)
+                                                * ctx->map.units.max
+                                                );
+        ctx->map.units.names = (unit_names *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.units.names)
+                                                * ctx->map.units.max
+                                                );
+        ctx->map.units.owners = (s32 *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.units.owners)
+                                                * ctx->map.units.max
+                                                );
+        for (u32 i = 0; i < ctx->map.units.max; ++i) {
+            ctx->map.units.owners[i] = -1;
+        }
+
         generate_map(ctx);
 
         ctx->current_turn_id = -1;
@@ -490,9 +514,15 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                     header.name = comm_server_msg_names::ADD_UNIT;
                     comm_write(comm, &header, sizeof(header));
 
+                    u32 id = ctx->map.units.used++;
+                    ctx->map.units.positions[id] = ctx->map.towns.positions[j];
+                    ctx->map.units.names[id] = unit_names::SOLDIER;
+                    ctx->map.units.owners[id] = i;
+
                     comm_server_add_unit_body add_unit_body;
-                    add_unit_body.position = ctx->map.towns.positions[j];
-                    add_unit_body.unit_name = unit_names::SOLDIER;
+                    add_unit_body.unit_id = id;
+                    add_unit_body.position = ctx->map.units.positions[id];
+                    add_unit_body.unit_name = ctx->map.units.names[id];
                     comm_write(comm, &add_unit_body, sizeof(add_unit_body));
 
                     comm_flush(comm);
@@ -550,6 +580,30 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                 b.unit_name = body->unit_name;
                                 comm_write(comm, &b, sizeof(b));
                             }
+                        }
+                    } else if (header->name == comm_client_msg_names::MOVE_UNIT) {
+                        comm_client_move_unit_body *body =
+                            (comm_client_move_unit_body *)(ctx->read_buffer.base + read_it);
+                        read_it += sizeof(*body);
+                        s32 owner = ctx->map.units.owners[body->unit_id];
+                        if (owner == i) {
+                            u32 id = body->unit_id;
+                            v2<s32> d = body->delta;
+
+                            v2<u32> pos = ctx->map.units.positions[id];
+                            pos.x += d.x;
+                            pos.y += d.y;
+                            ctx->map.units.positions[id] = pos;
+
+                            comm_server_header head;
+                            head.name = comm_server_msg_names::MOVE_UNIT;
+                            comm_server_move_unit_body b;
+                            b.unit_id = id;
+                            b.new_position = pos;
+                            comm_write(comm, &head, sizeof(head));
+                            comm_write(comm, &b, sizeof(b));
+
+                            discover_star(comm, ctx, pos);
                         }
                     }
                 }

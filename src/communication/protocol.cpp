@@ -171,23 +171,25 @@ u32 comm_read(communication *comm, void *buffer, u32 size) {
 	return len;
 }
 
-enum comm_server_msg_names {
+enum class comm_server_msg_names {
     INIT_MAP = 0,
     DISCOVER,
     PING,
     DISCOVER_TOWN,
 	YOUR_TURN,
     CONSTRUCTION_SET,
-    ADD_UNIT
+    ADD_UNIT,
+    MOVE_UNIT
 };
 
-enum comm_client_msg_names {
+enum class comm_client_msg_names {
     CONNECT = 0,
     START,
     PONG,
     ADMIN_DISCOVER_ENTIRE_MAP,
 	END_TURN,
-    SET_CONSTRUCTION
+    SET_CONSTRUCTION,
+    MOVE_UNIT
 };
 
 struct comm_client_header {
@@ -229,6 +231,17 @@ struct comm_client_set_construction_body {
 };
 
 struct comm_server_add_unit_body {
+    u32 unit_id;
     unit_names unit_name;
     v2<u32> position;
+};
+
+struct comm_client_move_unit_body {
+    u32 unit_id;
+    v2<s32> delta;
+};
+
+struct comm_server_move_unit_body {
+    u32 unit_id;
+    v2<u32> new_position;
 };
