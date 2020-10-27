@@ -350,6 +350,8 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                                     body.delta = d;
                                     comm_write(comm, &body, sizeof(body));
                                 }
+                            } else {
+                                ctx->selected_unit_id = -1;
                             }
                         }
                     }
