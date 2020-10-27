@@ -266,7 +266,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             ctx->my_server_id = init_map_body->your_id;
                             initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
                             ctx->current_screen = client_screen_names::GAME;
-                            printf("INIT_EVERYBODY\n");
+                            sitrep("INIT_EVERYBODY\n");
                         }
                     }
                 }

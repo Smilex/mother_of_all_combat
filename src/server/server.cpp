@@ -471,11 +471,11 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 					header = (comm_client_header *)(ctx->read_buffer.base + read_it);
 					if (header->name == comm_client_msg_names::CONNECT) {
 						ctx->clients.connecteds[i] = true;
-						printf("CONNECTED(%d)\n", i);
+						sitrep("CONNECTED(%d)\n", i);
 					} else if(header->name == comm_client_msg_names::START) {
 						if (ctx->clients.admins[i]) {
 							ctx->current_state = server_state_names::INIT_EVERYBODY;
-							printf("STARTING\n");
+							sitrep("STARTING\n");
 						}
 					}
 					read_it += sizeof(*header);

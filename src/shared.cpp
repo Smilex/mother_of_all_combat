@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <time.h>
+#include <stdarg.h>
 
 #define KB(x) (x * 1024L)
 #define MB(x) (KB(x) * 1024L)
@@ -48,6 +49,7 @@ enum class unit_names {
     SOLDIER
 };
 
+void sitrep(char *fmt, ...);
 u32 time_get_now_in_ms();
 
 struct memory_arena {
@@ -59,7 +61,7 @@ struct memory_arena {
 u8 *memory_arena_use(memory_arena *mem, u32 amount) {
     u8 *rv = mem->base + mem->used;
     if (mem->used + amount > mem->max) {
-        printf("TOO MUCH MEMORY USED FOR '%s'\n", mem->name);
+        sitrep("TOO MUCH MEMORY USED FOR '%s'\n", mem->name);
         assert(mem->used + amount <= mem->max);
     }
     mem->used += amount;
@@ -70,7 +72,7 @@ memory_arena memory_arena_child(memory_arena *parent, u32 size, char *name) {
     memory_arena rv;
     rv.base = parent->base + parent->used;
     if (parent->used + size > parent->max) {
-        printf("TOO MUCH MEMORY USED FROM '%s' WHEN CREATING CHILD '%s'\n", parent->name, name);
+        sitrep("TOO MUCH MEMORY USED FROM '%s' WHEN CREATING CHILD '%s'\n", parent->name, name);
         assert(parent->used + size <= parent->max);
     }
     parent->used += size;

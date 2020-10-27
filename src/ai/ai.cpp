@@ -150,6 +150,6 @@ void ai_update(memory_arena *mem, communication *comm) {
     }
 
     if (!comm_flush(comm)) {
-        printf("AI disconnected\n");
+        sitrep("AI disconnected\n");
     }
 }

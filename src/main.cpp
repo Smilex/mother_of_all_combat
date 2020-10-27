@@ -25,6 +25,13 @@ comm_memory_pipe server_to_client_pipe, client_to_server_pipe, server_to_ai_pipe
 
 client_update_and_render_t *client_update_and_render_ptr = &client_update_and_render;
 
+void sitrep(char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+}
+
 u32 time_get_now_in_ms() {
     struct timespec ts;
 
