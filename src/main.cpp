@@ -25,11 +25,26 @@ comm_memory_pipe server_to_client_pipe, client_to_server_pipe, server_to_ai_pipe
 
 client_update_and_render_t *client_update_and_render_ptr = &client_update_and_render;
 
-void sitrep(char *fmt, ...) {
+void sitrep(sitrep_names name, char *fmt, ...) {
+    char time_str[64] = {0};
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+    printf("[%s] ", time_str);
+
+    switch (name) {
+        case SITREP_INFO: printf("[INFO] "); break;
+        case SITREP_WARNING: printf("[WARN] "); break;
+        case SITREP_ERROR: printf("[ERROR] "); break;
+        case SITREP_DEBUG: printf("[DEBUG] "); break;
+    }
+
     va_list args;
     va_start(args, fmt);
     vprintf(fmt, args);
     va_end(args);
+    printf("\n");
 }
 
 u32 time_get_now_in_ms() {
