@@ -17,6 +17,8 @@ struct client_context {
     client_screen_names current_screen;
     memory_arena temp_mem, read_buffer;
 
+    Music background_music;
+
     u32 my_server_id;
     bool my_turn;
 
@@ -256,6 +258,9 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
         ctx->gui.admin.rect = (Rectangle){GetScreenWidth() - 200, GetScreenHeight() / 2, 200, GetScreenHeight() / 2};
 
+        ctx->background_music = LoadMusicStream("assets/trouble_with_tribals.mp3");
+        SetMusicVolume(ctx->background_music, 0.03);
+
         ctx->is_init = true;
     }
 
@@ -292,11 +297,14 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
                             ctx->current_screen = client_screen_names::GAME;
                             sitrep(SITREP_DEBUG, "INIT_EVERYBODY");
+                            PlayMusicStream(ctx->background_music);
                         }
                     }
                 }
             }
         } else if (ctx->current_screen == client_screen_names::GAME) {
+            UpdateMusicStream(ctx->background_music);
+
             real32 scr_width = GetScreenWidth();
             real32 scr_height = GetScreenHeight();
 

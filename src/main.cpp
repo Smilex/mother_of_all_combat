@@ -116,6 +116,7 @@ int main(int argc, char *argv[]) {
 
 
     InitWindow(1280, 720, "Hello, world");
+    InitAudioDevice();
     SetTargetFPS(60);
 
     while(!WindowShouldClose()) {
