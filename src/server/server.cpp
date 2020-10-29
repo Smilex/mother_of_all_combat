@@ -31,6 +31,7 @@ struct server_context {
             v2<u32> *positions;
             unit_names *names;
             s32 *owners;
+            u32 *action_points;
             u32 used, max;
         } units;
     } map;
@@ -451,6 +452,10 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
         for (u32 i = 0; i < ctx->map.units.max; ++i) {
             ctx->map.units.owners[i] = -1;
         }
+        ctx->map.units.action_points = (u32 *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.units.action_points)
+                                                * ctx->map.units.max
+                                                );
 
         generate_map(ctx);
 
@@ -518,9 +523,11 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                     ctx->map.units.positions[id] = ctx->map.towns.positions[j];
                     ctx->map.units.names[id] = unit_names::SOLDIER;
                     ctx->map.units.owners[id] = i;
+                    ctx->map.units.action_points[id] = 1;
 
                     comm_server_add_unit_body add_unit_body;
                     add_unit_body.unit_id = id;
+                    add_unit_body.action_points = ctx->map.units.action_points[id];
                     add_unit_body.position = ctx->map.units.positions[id];
                     add_unit_body.unit_name = ctx->map.units.names[id];
                     comm_write(comm, &add_unit_body, sizeof(add_unit_body));
@@ -561,6 +568,22 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                             comm_server_header head;
                             head.name = comm_server_msg_names::YOUR_TURN;
                             comm_write(c, &head, sizeof(head));
+
+                            for (u32 j = 0; j < ctx->map.units.used; ++j) {
+                                if (ctx->map.units.owners[j] == ctx->current_turn_id) {
+                                    if (ctx->map.units.names[j] == unit_names::SOLDIER) {
+                                        ctx->map.units.action_points[j] = 1;
+                                    }
+
+                                    head.name = comm_server_msg_names::SET_UNIT_ACTION_POINTS;
+                                    comm_write(c, &head, sizeof(head));
+
+                                    comm_server_set_unit_action_points_body body;
+                                    body.unit_id = j;
+                                    body.new_action_points = ctx->map.units.action_points[j];
+                                    comm_write(c, &body, sizeof(body));
+                                }
+                            }
                         }
                     } else if (header->name == comm_client_msg_names::SET_CONSTRUCTION) {
                         if (ctx->current_turn_id == i) {
@@ -590,20 +613,26 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                             u32 id = body->unit_id;
                             v2<s32> d = body->delta;
 
-                            v2<u32> pos = ctx->map.units.positions[id];
-                            pos.x += d.x;
-                            pos.y += d.y;
-                            ctx->map.units.positions[id] = pos;
+                            u32 action_points = ctx->map.units.action_points[id];
+                            if (action_points > 0) {
+                                action_points--;
+                                ctx->map.units.action_points[id] = action_points;
+                                v2<u32> pos = ctx->map.units.positions[id];
+                                pos.x += d.x;
+                                pos.y += d.y;
+                                ctx->map.units.positions[id] = pos;
 
-                            comm_server_header head;
-                            head.name = comm_server_msg_names::MOVE_UNIT;
-                            comm_server_move_unit_body b;
-                            b.unit_id = id;
-                            b.new_position = pos;
-                            comm_write(comm, &head, sizeof(head));
-                            comm_write(comm, &b, sizeof(b));
+                                comm_server_header head;
+                                head.name = comm_server_msg_names::MOVE_UNIT;
+                                comm_server_move_unit_body b;
+                                b.unit_id = id;
+                                b.action_points_left = ctx->map.units.action_points[id];
+                                b.new_position = pos;
+                                comm_write(comm, &head, sizeof(head));
+                                comm_write(comm, &b, sizeof(b));
 
-                            discover_star(comm, ctx, pos);
+                                discover_3x3(comm, ctx, pos);
+                            }
                         }
                     }
                 }

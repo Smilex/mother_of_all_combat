@@ -37,6 +37,7 @@ struct client_context {
             unit_names *names;
             u32 *server_ids;
             s32 *owners;
+            u32 *action_points;
             u32 used, max;
         } units;
     } map;
@@ -122,6 +123,10 @@ void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 heigh
                                             sizeof(*ctx->map.units.server_ids)
                                             * ctx->map.units.max
                                             );
+    ctx->map.units.action_points = (u32 *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.units.action_points)
+                                            * ctx->map.units.max
+                                            );
 }
 
 void draw_map(client_context *ctx) {
@@ -196,10 +201,15 @@ void draw_map(client_context *ctx) {
         Vector2 bottom_right = (Vector2){.x = X + tile_width, .y = Y + tile_height};
         DrawTriangle(bottom_left, bottom_right, top_middle, color);
 
+        color = BLACK;
         if (ctx->selected_unit_id == (s32)i) {
-            DrawTriangleLines(bottom_left, bottom_right,
-                                top_middle, RED);
+            color = RED;
         }
+        DrawTriangleLines(bottom_left, bottom_right,
+                            top_middle, color);
+        char num_buf[3 + 1];
+        snprintf(num_buf, 3 + 1, "%u", ctx->map.units.action_points[i]);
+        DrawText(num_buf, X, Y, 16, WHITE);
     }
 }
 
@@ -398,6 +408,17 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         }
                     } else if (header->name == comm_server_msg_names::YOUR_TURN) {
                         ctx->my_turn = true;
+                    } else if (header->name == comm_server_msg_names::SET_UNIT_ACTION_POINTS) {
+                        comm_server_set_unit_action_points_body *body;
+                        if (len - buf_it >= sizeof(*body)) {
+                            body = (comm_server_set_unit_action_points_body *)(ctx->read_buffer.base + buf_it);
+                            buf_it += sizeof(*body);
+                            for (u32 i = 0; i < ctx->map.units.used; ++i) {
+                                if (ctx->map.units.server_ids[i] == body->unit_id) {
+                                    ctx->map.units.action_points[i] = body->new_action_points;
+                                }
+                            }
+                        }
                     } else if (header->name == comm_server_msg_names::CONSTRUCTION_SET) {
                         comm_server_construction_set_body *construction_set_body;
                         if (len - buf_it >= sizeof(*construction_set_body)) {
@@ -423,6 +444,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             ctx->map.units.server_ids[id] = add_unit_body->unit_id;
                             ctx->map.units.positions[id] = add_unit_body->position;
                             ctx->map.units.names[id] = add_unit_body->unit_name;
+                            ctx->map.units.action_points[id] = add_unit_body->action_points;
                             ctx->map.units.owners[id] = ctx->my_server_id;
                         }
                     } else if (header->name == comm_server_msg_names::MOVE_UNIT) {
@@ -433,6 +455,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             for (u32 i = 0; i < ctx->map.units.used; ++i) {
                                 if (ctx->map.units.server_ids[i] == move_unit_body->unit_id) {
                                     ctx->map.units.positions[i] = move_unit_body->new_position;
+                                    ctx->map.units.action_points[i] = move_unit_body->action_points_left;
                                     break;
                                 }
                             }

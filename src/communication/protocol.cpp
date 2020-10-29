@@ -122,15 +122,15 @@ u32 comm_read(communication *comm, void *buffer, u32 size) {
 
     s32 len = comm->recv(*comm, buffer, size);
 
-	if (len < 0) {
-		return 0;
-	}
+    if (len < 0) {
+        return 0;
+    }
 
     if (len < sizeof(header)) {
         return 0;
     }
 
-	header = (comm_shared_header *)buffer;
+    header = (comm_shared_header *)buffer;
     
     u32 version = header->magic ^ (0b101 << 29);
     if (version != PROTOCOL_VERSION) {
@@ -168,7 +168,7 @@ u32 comm_read(communication *comm, void *buffer, u32 size) {
         }
     }
 
-	return len;
+    return len;
 }
 
 enum class comm_server_msg_names {
@@ -176,10 +176,11 @@ enum class comm_server_msg_names {
     DISCOVER,
     PING,
     DISCOVER_TOWN,
-	YOUR_TURN,
+    YOUR_TURN,
     CONSTRUCTION_SET,
     ADD_UNIT,
-    MOVE_UNIT
+    MOVE_UNIT,
+    SET_UNIT_ACTION_POINTS
 };
 
 enum class comm_client_msg_names {
@@ -187,7 +188,7 @@ enum class comm_client_msg_names {
     START,
     PONG,
     ADMIN_DISCOVER_ENTIRE_MAP,
-	END_TURN,
+    END_TURN,
     SET_CONSTRUCTION,
     MOVE_UNIT
 };
@@ -232,6 +233,7 @@ struct comm_client_set_construction_body {
 
 struct comm_server_add_unit_body {
     u32 unit_id;
+    u32 action_points;
     unit_names unit_name;
     v2<u32> position;
 };
@@ -243,5 +245,11 @@ struct comm_client_move_unit_body {
 
 struct comm_server_move_unit_body {
     u32 unit_id;
+    u32 action_points_left;
     v2<u32> new_position;
+};
+
+struct comm_server_set_unit_action_points_body {
+    u32 unit_id;
+    u32 new_action_points;
 };
