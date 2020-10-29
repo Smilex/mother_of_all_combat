@@ -57,7 +57,7 @@ struct client_context {
     struct {
         struct {
             Rectangle rect;
-            char *build_names[2];
+            char *build_names[3];
             s32 build_active;
         } town;
         struct {
@@ -196,17 +196,31 @@ void draw_map(client_context *ctx) {
         Y -= ctx->camera.y * tile_height;
 
         Color color = ctx->clients.colors[ctx->map.units.owners[i]];
-        Vector2 bottom_left = (Vector2){.x = X, .y = Y + tile_height};
-        Vector2 top_middle = (Vector2){.x = X + tile_width / 2, .y = Y};
-        Vector2 bottom_right = (Vector2){.x = X + tile_width, .y = Y + tile_height};
-        DrawTriangle(bottom_left, bottom_right, top_middle, color);
+        if (ctx->map.units.names[i] == unit_names::SOLDIER) {
+            Vector2 bottom_left = (Vector2){.x = X, .y = Y + tile_height};
+            Vector2 top_middle = (Vector2){.x = X + tile_width / 2, .y = Y};
+            Vector2 bottom_right = (Vector2){.x = X + tile_width, .y = Y + tile_height};
+            DrawTriangle(bottom_left, bottom_right, top_middle, color);
 
-        color = BLACK;
-        if (ctx->selected_unit_id == (s32)i) {
-            color = RED;
+            color = BLACK;
+            if (ctx->selected_unit_id == (s32)i) {
+                color = RED;
+            }
+            DrawTriangleLines(bottom_left, bottom_right,
+                                top_middle, color);
+        } else if (ctx->map.units.names[i] == unit_names::CARAVAN) {
+            Vector2 mid_left = (Vector2){.x = X, .y = Y + tile_height / 2};
+            Vector2 top_right = (Vector2){.x = X + tile_width, .y = Y};
+            Vector2 bottom_right = (Vector2){.x = X + tile_width, .y = Y + tile_height};
+            DrawTriangle(mid_left, bottom_right, top_right, color);
+
+            color = BLACK;
+            if (ctx->selected_unit_id == (s32)i) {
+                color = RED;
+            }
+            DrawTriangleLines(mid_left, bottom_right,
+                                top_right, color);
         }
-        DrawTriangleLines(bottom_left, bottom_right,
-                            top_middle, color);
         char num_buf[3 + 1];
         snprintf(num_buf, 3 + 1, "%u", ctx->map.units.action_points[i]);
         DrawText(num_buf, X, Y, 16, WHITE);
@@ -238,6 +252,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
         ctx->gui.town.rect = (Rectangle){GetScreenWidth() - 200, 0, 200, GetScreenHeight() / 2};
         ctx->gui.town.build_names[0] = "None";
         ctx->gui.town.build_names[1] = "Soldier";
+        ctx->gui.town.build_names[2] = "Caravan";
 
         ctx->gui.admin.rect = (Rectangle){GetScreenWidth() - 200, GetScreenHeight() / 2, 200, GetScreenHeight() / 2};
 
@@ -351,15 +366,13 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             d.y = (s32)mouse_tile_pos.y - (s32)selected_pos.y;
                             if ((d.x >= -1 && d.x <= 1) && (d.y >= -1 && d.y <= 1)) {
                                 u32 idx = ctx->map.width * mouse_tile_pos.y + mouse_tile_pos.x;
-                                if (ctx->map.terrain[idx] == client_terrain_names::GROUND) {
-                                    comm_client_header header;
-                                    header.name = comm_client_msg_names::MOVE_UNIT;
-                                    comm_write(comm, &header, sizeof(header));
-                                    comm_client_move_unit_body body;
-                                    body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
-                                    body.delta = d;
-                                    comm_write(comm, &body, sizeof(body));
-                                }
+                                comm_client_header header;
+                                header.name = comm_client_msg_names::MOVE_UNIT;
+                                comm_write(comm, &header, sizeof(header));
+                                comm_client_move_unit_body body;
+                                body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
+                                body.delta = d;
+                                comm_write(comm, &body, sizeof(body));
                             } else {
                                 ctx->selected_unit_id = -1;
                             }
@@ -493,7 +506,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 bool close = GuiWindowBox(town_window, "Town");
                 GuiLabel((Rectangle){town_window.x + 10, town_window.y + 30, town_window.width - 20, 20}, "Build:");
                 s32 prev_active = ctx->gui.town.build_active;
-                s32 curr_active = GuiToggleGroup((Rectangle){town_window.x + 20, town_window.y + 50, town_window.width - 40, 30}, TextJoin((const char**)ctx->gui.town.build_names, 2, "\n"), ctx->gui.town.build_active);
+                s32 curr_active = GuiToggleGroup((Rectangle){town_window.x + 20, town_window.y + 50, town_window.width - 40, 30}, TextJoin((const char**)ctx->gui.town.build_names, 3, "\n"), ctx->gui.town.build_active);
                 if (prev_active != curr_active) {
                     comm_client_header header;
                     header.name = comm_client_msg_names::SET_CONSTRUCTION;

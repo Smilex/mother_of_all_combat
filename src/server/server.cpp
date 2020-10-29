@@ -54,7 +54,10 @@ void add_unit(communication *comm, server_context *ctx, v2<u32> pos, unit_names 
     ctx->map.units.positions[id] = pos;
     ctx->map.units.names[id] = name;
     ctx->map.units.owners[id] = owner;
-    ctx->map.units.action_points[id] = 1;
+    if (name == unit_names::SOLDIER)
+        ctx->map.units.action_points[id] = 1;
+    else if (name == unit_names::CARAVAN)
+        ctx->map.units.action_points[id] = 5;
 
     comm_server_add_unit_body add_unit_body;
     add_unit_body.unit_id = id;
@@ -583,6 +586,8 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                 if (ctx->map.units.owners[j] == ctx->current_turn_id) {
                                     if (ctx->map.units.names[j] == unit_names::SOLDIER) {
                                         ctx->map.units.action_points[j] = 1;
+                                    } else if (ctx->map.units.names[j] == unit_names::CARAVAN) {
+                                        ctx->map.units.action_points[j] = 5;
                                     }
 
                                     head.name = comm_server_msg_names::SET_UNIT_ACTION_POINTS;
@@ -603,6 +608,8 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                         if (timer == 0) {
                                             if (name == unit_names::SOLDIER) {
                                                 timer = 3;
+                                            } else if (name == unit_names::CARAVAN) {
+                                                timer = 5;
                                             }
 
                                             add_unit(c, ctx, ctx->map.towns.positions[j], name, ctx->current_turn_id);
@@ -624,6 +631,8 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 
                                 if (body->unit_name == unit_names::SOLDIER) {
                                     ctx->map.towns.construction_timers[body->town_id] = 3;
+                                } else if (body->unit_name == unit_names::CARAVAN) {
+                                    ctx->map.towns.construction_timers[body->town_id] = 5;
                                 }
 
                                 comm_server_header head;
@@ -649,22 +658,41 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                             u32 action_points = ctx->map.units.action_points[id];
                             if (action_points > 0) {
                                 action_points--;
-                                ctx->map.units.action_points[id] = action_points;
+
                                 v2<u32> pos = ctx->map.units.positions[id];
                                 pos.x += d.x;
                                 pos.y += d.y;
-                                ctx->map.units.positions[id] = pos;
 
-                                comm_server_header head;
-                                head.name = comm_server_msg_names::MOVE_UNIT;
-                                comm_server_move_unit_body b;
-                                b.unit_id = id;
-                                b.action_points_left = ctx->map.units.action_points[id];
-                                b.new_position = pos;
-                                comm_write(comm, &head, sizeof(head));
-                                comm_write(comm, &b, sizeof(b));
+                                u32 idx = pos.y * ctx->map.terrain_width + pos.x;
+                                bool passable = false;
+                                unit_names name = ctx->map.units.names[id];
+                                terrain_names terrain = ctx->map.terrain[idx];
+                                if (name == unit_names::SOLDIER) {
+                                    if (terrain == terrain_names::GROUND) {
+                                        passable = true;
+                                    }
+                                } else if (name == unit_names::CARAVAN) {
+                                    if (terrain == terrain_names::GROUND ||
+                                        terrain == terrain_names::WATER) {
+                                        passable = true;
+                                    }
+                                }
 
-                                discover_3x3(comm, ctx, pos);
+                                if (passable) {
+                                    ctx->map.units.action_points[id] = action_points;
+                                    ctx->map.units.positions[id] = pos;
+
+                                    comm_server_header head;
+                                    head.name = comm_server_msg_names::MOVE_UNIT;
+                                    comm_server_move_unit_body b;
+                                    b.unit_id = id;
+                                    b.action_points_left = ctx->map.units.action_points[id];
+                                    b.new_position = pos;
+                                    comm_write(comm, &head, sizeof(head));
+                                    comm_write(comm, &b, sizeof(b));
+
+                                    discover_3x3(comm, ctx, pos);
+                                }
                             }
                         }
                     }

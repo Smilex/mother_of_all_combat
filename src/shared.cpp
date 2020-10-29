@@ -46,7 +46,8 @@ enum terrain_names {
 
 enum class unit_names {
     NONE,
-    SOLDIER
+    SOLDIER,
+    CARAVAN
 };
 
 enum sitrep_names {
