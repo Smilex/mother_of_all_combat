@@ -402,8 +402,20 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             ctx->map.towns.server_ids[id] = discover_town_body->id;
 
                             if (discover_town_body->owner == ctx->my_server_id) {
-                                ctx->camera.x = discover_town_body->position.x;
-                                ctx->camera.y = discover_town_body->position.y;
+                                s32 camera_x = (s32)discover_town_body->position.x;
+                                s32 camera_y = (s32)discover_town_body->position.y;
+                                u32 num_tiles_in_scr_width = scr_width / 32;
+                                u32 num_tiles_in_scr_height = scr_height / 32;
+                                u32 half_scr_width = num_tiles_in_scr_width >> 1;
+                                u32 half_scr_height = num_tiles_in_scr_height >> 1;
+                                camera_x -= half_scr_width;
+                                if (camera_x < 0)
+                                    camera_x = 0;
+                                camera_y -= half_scr_height;
+                                if (camera_y < 0)
+                                    camera_y = 0;
+                                ctx->camera.x = camera_x;
+                                ctx->camera.y = camera_y;
                             }
                         }
                     } else if (header->name == comm_server_msg_names::YOUR_TURN) {
