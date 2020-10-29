@@ -223,6 +223,7 @@ struct comm_server_discover_town_body {
 
 struct comm_server_construction_set_body {
     u32 town_id;
+    u32 construction_timer;
     unit_names unit_name;
 };
 
