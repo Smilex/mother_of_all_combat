@@ -221,6 +221,24 @@ void discover_3x3(communication *comm, server_context *ctx, v2<u32> center) {
     discover_body.num = num;
     comm_write(comm, &discover_body, sizeof(discover_body));
     comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
+
+    for (u32 i = 0; i < ctx->map.towns.used; ++i) {
+        v2<u32> town_pos = ctx->map.towns.positions[i];
+        v2<s32> d;
+        d.x = (s32)town_pos.x - (s32)center.x;
+        d.y = (s32)town_pos.y - (s32)center.y;
+
+        if ((d.x >= -1 && d.x <= 1) && (d.y >= -1 && d.y <= 1)) {
+            header.name = comm_server_msg_names::DISCOVER_TOWN;
+            comm_write(comm, &header, sizeof(header));
+
+            comm_server_discover_town_body discover_town_body;
+            discover_town_body.id = i;
+            discover_town_body.owner = ctx->map.towns.owners[i];
+            discover_town_body.position = town_pos;
+            comm_write(comm, &discover_town_body, sizeof(discover_town_body));
+        }
+    }
 }
 
 real32 interpolate(real32 a, real32 b, real32 w) {
