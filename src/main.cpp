@@ -60,7 +60,6 @@ u32 time_get_now_in_ms() {
 }
 
 int main(int argc, char *argv[]) {
-
     total_memory.name = "total_memory";
     total_memory.used = 0;
     total_memory.max = GB(2);

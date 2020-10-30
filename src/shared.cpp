@@ -281,3 +281,64 @@ struct doubly_linked_list {
         }
     }
 };
+
+template<class T>
+struct priority_queue_node {
+    priority_queue_node<T> *next;
+    s32 priority;
+    T payload;
+};
+
+template<class T>
+struct priority_queue {
+    priority_queue_node<T> *first;
+
+    void push(T payload, s32 priority) {
+        if (!first) {
+            first = (priority_queue_node<T> *)malloc(sizeof(*first));
+            first->next = NULL;
+            first->priority = priority;
+            first->payload = payload;
+        } else {
+            if (priority > first->priority) {
+                priority_queue_node<T> *n = (priority_queue_node<T> *)malloc(sizeof(*n));
+                n->next = first;
+                n->priority = priority;
+                n->payload = payload;
+                first = n;
+            } else {
+                priority_queue_node<T> *it = first->next, *prev = first;
+
+                while (it && it->priority > priority) {
+                    prev = it;
+                    it = it->next;
+                }
+
+                if (!it) {
+                    it = (priority_queue_node<T> *)malloc(sizeof(*it));
+                    it->next = NULL;
+                    it->priority = priority;
+                    it->payload = payload;
+                    prev->next = it;
+                } else {
+                    prev->next = (priority_queue_node<T> *)malloc(sizeof(*it));
+                    prev->next->next = it;
+                    prev->next->priority = priority;
+                    prev->next->payload = payload;
+                }
+            }
+        }
+    }
+
+    T pop() {
+        priority_queue_node<T> *next = first->next;
+        T rv = first->payload;
+        free(first);
+        first = next;
+        return rv;
+    }
+
+    bool empty() {
+        return (first == NULL);
+    }
+};
