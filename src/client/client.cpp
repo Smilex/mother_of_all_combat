@@ -68,6 +68,14 @@ struct client_context {
     } gui;
 };
 
+template <class T>
+Vector2 v2_to_Vector2(v2<T> v) {
+    Vector2 rv;
+    rv.x = (real32)v.x;
+    rv.y = (real32)v.y;
+    return rv;
+}
+
 client_terrain_names terrain_names_to_client_terrain_names(terrain_names name) {
     if (name == terrain_names::FOG)
         return client_terrain_names::FOG;
@@ -297,7 +305,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
                             ctx->current_screen = client_screen_names::GAME;
                             sitrep(SITREP_DEBUG, "INIT_EVERYBODY");
-                            PlayMusicStream(ctx->background_music);
+                            //PlayMusicStream(ctx->background_music);
                         }
                     }
                 }
@@ -497,6 +505,20 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 }
             }
             draw_map(ctx);
+
+            if (ctx->selected_unit_id != -1) {
+                v2<real32> unit_world_pos;
+                v2<real32> unit_screen_pos;
+                v2<real32> unit_screen_pos_centered;
+                unit_world_pos.x = ctx->map.units.positions[ctx->selected_unit_id].x * 32;
+                unit_world_pos.y = ctx->map.units.positions[ctx->selected_unit_id].y * 32;
+                unit_screen_pos.x = unit_world_pos.x - (ctx->camera.x * 32);
+                unit_screen_pos.y = unit_world_pos.y - (ctx->camera.y * 32);
+                unit_screen_pos_centered.x = unit_screen_pos.x + 16;
+                unit_screen_pos_centered.y = unit_screen_pos.y + 16;
+
+                DrawLineV(v2_to_Vector2(unit_screen_pos_centered), GetMousePosition(), BLACK);
+            }
 
             if (GuiButton((Rectangle){scr_width / 2 - 60, scr_height - 30, 120, 30}, "END TURN")) {
                 comm_client_header header;
