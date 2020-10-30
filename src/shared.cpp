@@ -342,3 +342,44 @@ struct priority_queue {
         return (first == NULL);
     }
 };
+
+template<class T, class K>
+struct dictionary_node {
+    dictionary_node<T, K> *next;
+    T key;
+    K payload;
+};
+
+template<class T, class K>
+struct dictionary {
+    dictionary_node<T, K> *first;
+
+    void push(T key, K payload) {
+        if (!first) {
+            first = (dictionary_node<T, K> *)malloc(sizeof(*first));
+            first->next = NULL;
+            first->key = key;
+            first->payload = payload;
+        } else {
+            dictionary_node<T, K> *n = (dictionary_node<T, K> *)malloc(sizeof(*n));
+            n->next = first;
+            n->key = key;
+            n->payload = payload;
+            first = n;
+        }
+    }
+
+    K *get(T key) {
+        dictionary_node<T, K> *it = first;
+
+        while (it) {
+            if (it->key == key) {
+                return &it->payload;
+            }
+
+            it = it->next;
+        }
+
+        return NULL;
+    }
+};
