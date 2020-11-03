@@ -7,6 +7,9 @@
 #define MB(x) (KB(x) * 1024L)
 #define GB(x) (MB(x) * 1024L)
 
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
+
 typedef uint32_t u32;
 typedef uint8_t u8;
 typedef int32_t s32;
@@ -34,6 +37,14 @@ struct v2 {
         rv.x = this->x * scalar;
         rv.y = this->y * scalar;
         return rv;
+    }
+
+    bool operator==(v2<T> rhs) {
+        return (this->x == rhs.x && this->y == rhs.y);
+    }
+
+    bool operator!=(v2<T> rhs) {
+        return (this->x != rhs.x || this->y != rhs.y);
     }
 };
 
@@ -183,6 +194,7 @@ struct doubly_linked_list {
             first->prev->prev = NULL;
             first->prev->next = first;
             first->prev->payload = item;
+            first = first->prev;
         }
     }
 
@@ -271,7 +283,8 @@ struct doubly_linked_list {
     }
 
     void clear() {
-        doubly_linked_list_node<T> *iter = first, *iter_next = first->next;
+        if (!first) return;
+        doubly_linked_list_node<T> *iter = first, *iter_next;
 
         first = NULL;
         while (iter) {
@@ -285,7 +298,7 @@ struct doubly_linked_list {
 template<class T>
 struct priority_queue_node {
     priority_queue_node<T> *next;
-    s32 priority;
+    u32 priority;
     T payload;
 };
 
@@ -293,14 +306,25 @@ template<class T>
 struct priority_queue {
     priority_queue_node<T> *first;
 
-    void push(T payload, s32 priority) {
+    ~priority_queue() {
+        if (!first) return;
+        priority_queue_node<T> *it = first, *it_next;
+
+        while (it) {
+            it_next = it->next;
+            free(it);
+            it = it_next;
+        }
+    }
+
+    void push(T payload, u32 priority) {
         if (!first) {
             first = (priority_queue_node<T> *)malloc(sizeof(*first));
             first->next = NULL;
             first->priority = priority;
             first->payload = payload;
         } else {
-            if (priority > first->priority) {
+            if (priority < first->priority) {
                 priority_queue_node<T> *n = (priority_queue_node<T> *)malloc(sizeof(*n));
                 n->next = first;
                 n->priority = priority;
@@ -309,7 +333,7 @@ struct priority_queue {
             } else {
                 priority_queue_node<T> *it = first->next, *prev = first;
 
-                while (it && it->priority > priority) {
+                while (it && it->priority < priority) {
                     prev = it;
                     it = it->next;
                 }
@@ -353,6 +377,17 @@ struct dictionary_node {
 template<class T, class K>
 struct dictionary {
     dictionary_node<T, K> *first;
+
+    ~dictionary() {
+        if (!first) return;
+    
+        dictionary_node<T, K> *it = first, *it_next;
+        while (it) {
+            it_next = it->next;
+            free(it);
+            it = it_next;
+        }
+    }
 
     void push(T key, K payload) {
         if (!first) {
