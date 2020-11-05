@@ -482,16 +482,55 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
             }
 
             if (!is_pt_in_gui(ctx, GetMousePosition())) {
+                Vector2 mouse_pos = GetMousePosition();
+                v2<u32> mouse_tile_pos;
+                real32 tile_width = 32.0f;
+                real32 tile_height = 32.0f;
+                mouse_tile_pos.x = (u32)floor(mouse_pos.x / tile_width);
+                mouse_tile_pos.y = (u32)floor(mouse_pos.y / tile_height);
+                mouse_tile_pos.x += ctx->camera.x;
+                mouse_tile_pos.y += ctx->camera.y;
                 if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                    Vector2 mouse_pos = GetMousePosition();
-                    v2<u32> mouse_tile_pos;
-                    real32 tile_width = 32.0f;
-                    real32 tile_height = 32.0f;
-                    mouse_tile_pos.x = (u32)floor(mouse_pos.x / tile_width);
-                    mouse_tile_pos.y = (u32)floor(mouse_pos.y / tile_height);
-                    mouse_tile_pos.x += ctx->camera.x;
-                    mouse_tile_pos.y += ctx->camera.y;
+                    if (ctx->selected_unit_id != -1) {
+                        if (ctx->map.units.names[ctx->selected_unit_id] == unit_names::SOLDIER) {
+                            v2<u32> selected_pos = ctx->map.units.positions[ctx->selected_unit_id];
+                            v2<s32> d;
+                            d.x = (s32)mouse_tile_pos.x - (s32)selected_pos.x;
+                            d.y = (s32)mouse_tile_pos.y - (s32)selected_pos.y;
+                            if ((d.x >= -1 && d.x <= 1) && (d.y >= -1 && d.y <= 1)) {
+                                u32 idx = ctx->map.width * mouse_tile_pos.y + mouse_tile_pos.x;
+                                comm_client_header header;
+                                header.name = comm_client_msg_names::MOVE_UNIT;
+                                comm_write(comm, &header, sizeof(header));
+                                comm_client_move_unit_body body;
+                                body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
+                                body.delta = d;
+                                comm_write(comm, &body, sizeof(body));
+                            } else {
+                                ctx->selected_unit_id = -1;
+                            }
+                        } else if (ctx->map.units.names[ctx->selected_unit_id] == unit_names::CARAVAN) {
+                            v2<u32> prev_path = ctx->map.units.positions[ctx->selected_unit_id];
+                            v2<u32> *paths;
+                            u32 num_paths = get_path_for_caravan(ctx, prev_path, mouse_tile_pos, &ctx->temp_mem, &paths);
 
+                            for (u32 i = 0; i < num_paths; ++i) {
+                                comm_client_header header;
+                                header.name = comm_client_msg_names::MOVE_UNIT;
+                                comm_write(comm, &header, sizeof(header));
+                                comm_client_move_unit_body body;
+                                body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
+                                v2<s32> d;
+                                d.x = (s32)paths[i].x - (s32)prev_path.x;
+                                d.y = (s32)paths[i].y - (s32)prev_path.y;
+                                body.delta = d;
+                                comm_write(comm, &body, sizeof(body));
+
+                                prev_path = paths[i];
+                            }
+                        }
+                    }
+                } else if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
                     bool found = false;
                     for (u32 i = 0; i < ctx->map.units.used; ++i) {
                         if (mouse_tile_pos.x == ctx->map.units.positions[i].x &&
@@ -520,45 +559,8 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         }
 
                         if (!found) {
-                            if (ctx->selected_unit_id != -1) {
-                                if (ctx->map.units.names[ctx->selected_unit_id] == unit_names::SOLDIER) {
-                                    v2<u32> selected_pos = ctx->map.units.positions[ctx->selected_unit_id];
-                                    v2<s32> d;
-                                    d.x = (s32)mouse_tile_pos.x - (s32)selected_pos.x;
-                                    d.y = (s32)mouse_tile_pos.y - (s32)selected_pos.y;
-                                    if ((d.x >= -1 && d.x <= 1) && (d.y >= -1 && d.y <= 1)) {
-                                        u32 idx = ctx->map.width * mouse_tile_pos.y + mouse_tile_pos.x;
-                                        comm_client_header header;
-                                        header.name = comm_client_msg_names::MOVE_UNIT;
-                                        comm_write(comm, &header, sizeof(header));
-                                        comm_client_move_unit_body body;
-                                        body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
-                                        body.delta = d;
-                                        comm_write(comm, &body, sizeof(body));
-                                    } else {
-                                        ctx->selected_unit_id = -1;
-                                    }
-                                } else if (ctx->map.units.names[ctx->selected_unit_id] == unit_names::CARAVAN) {
-                                    v2<u32> prev_path = ctx->map.units.positions[ctx->selected_unit_id];
-                                    v2<u32> *paths;
-                                    u32 num_paths = get_path_for_caravan(ctx, prev_path, mouse_tile_pos, &ctx->temp_mem, &paths);
-
-                                    for (u32 i = 0; i < num_paths; ++i) {
-                                        comm_client_header header;
-                                        header.name = comm_client_msg_names::MOVE_UNIT;
-                                        comm_write(comm, &header, sizeof(header));
-                                        comm_client_move_unit_body body;
-                                        body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
-                                        v2<s32> d;
-                                        d.x = (s32)paths[i].x - (s32)prev_path.x;
-                                        d.y = (s32)paths[i].y - (s32)prev_path.y;
-                                        body.delta = d;
-                                        comm_write(comm, &body, sizeof(body));
-
-                                        prev_path = paths[i];
-                                    }
-                                }
-                            }
+                            ctx->selected_town_id = -1;
+                            ctx->selected_unit_id = -1;
                         }
                     }
                 }
