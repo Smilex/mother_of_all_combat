@@ -33,6 +33,7 @@ struct server_context {
             unit_names *names;
             s32 *owners;
             u32 *action_points;
+            s32 *slots;
             u32 used, max;
         } units;
     } map;
@@ -501,6 +502,13 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 sizeof(*ctx->map.units.action_points)
                                                 * ctx->map.units.max
                                                 );
+        ctx->map.units.slots = (s32 *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.units.slots)
+                                                * ctx->map.units.max
+                                                );
+        for (u32 i = 0; i < ctx->map.units.max; ++i) {
+            ctx->map.units.slots[i] = -1;
+        }
 
         generate_map(ctx);
 
@@ -710,7 +718,45 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                     comm_write(comm, &b, sizeof(b));
 
                                     discover_3x3(comm, ctx, pos);
+
+                                    if (ctx->map.units.slots[id] != -1) {
+                                        head.name = comm_server_msg_names::MOVE_UNIT;
+                                        b.unit_id = ctx->map.units.slots[id];
+                                        b.action_points_left = ctx->map.units.action_points[b.unit_id];
+                                        b.new_position = pos;
+                                        comm_write(comm, &head, sizeof(head));
+                                        comm_write(comm, &b, sizeof(b));
+                                    }
                                 }
+                            }
+                        }
+                    } else if (header->name == comm_client_msg_names::LOAD_UNIT) {
+                        comm_client_load_unit_body *body =
+                            (comm_client_load_unit_body *)(ctx->read_buffer.base + read_it);
+                        read_it += sizeof(*body);
+                        s32 owner_that_loads = ctx->map.units.owners[body->unit_that_loads];
+                        s32 owner = ctx->map.units.owners[body->unit_to_load];
+                        if (owner == i && i == owner_that_loads) {
+                            u32 id = body->unit_to_load;
+                            u32 id_that_loads = body->unit_that_loads;
+                            u32 action_points = ctx->map.units.action_points[id];
+                            if (action_points > 0) {
+                                --action_points;
+
+                                ctx->map.units.action_points[id] = action_points;
+                                ctx->map.units.positions[id] = ctx->map.units.positions[id_that_loads];
+
+                                comm_server_header head;
+                                head.name = comm_server_msg_names::LOAD_UNIT;
+                                comm_write(comm, &head, sizeof(head));
+                                comm_server_load_unit_body b;
+                                b.unit_that_loads = id_that_loads;
+                                b.unit_to_load = id;
+                                b.action_points_left = action_points;
+                                b.new_position = ctx->map.units.positions[id_that_loads];
+                                comm_write(comm, &b, sizeof(b));
+
+                                ctx->map.units.slots[id_that_loads] = id;
                             }
                         }
                     }

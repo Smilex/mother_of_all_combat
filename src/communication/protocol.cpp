@@ -180,7 +180,8 @@ enum class comm_server_msg_names {
     CONSTRUCTION_SET,
     ADD_UNIT,
     MOVE_UNIT,
-    SET_UNIT_ACTION_POINTS
+    SET_UNIT_ACTION_POINTS,
+    LOAD_UNIT
 };
 
 enum class comm_client_msg_names {
@@ -190,7 +191,8 @@ enum class comm_client_msg_names {
     ADMIN_DISCOVER_ENTIRE_MAP,
     END_TURN,
     SET_CONSTRUCTION,
-    MOVE_UNIT
+    MOVE_UNIT,
+    LOAD_UNIT
 };
 
 struct comm_client_header {
@@ -253,4 +255,16 @@ struct comm_server_move_unit_body {
 struct comm_server_set_unit_action_points_body {
     u32 unit_id;
     u32 new_action_points;
+};
+
+struct comm_client_load_unit_body {
+    u32 unit_that_loads,
+        unit_to_load;
+};
+
+struct comm_server_load_unit_body {
+    u32 unit_that_loads,
+        unit_to_load;
+    u32 action_points_left;
+    v2<u32> new_position;
 };
