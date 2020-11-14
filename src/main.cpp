@@ -2,6 +2,7 @@
 #define RAYGUI_IMPLEMENTATION
 #define RAYGUI_SUPPORT_RICONS
 #include "raygui.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -48,6 +49,9 @@ void sitrep(sitrep_names name, char *fmt, ...) {
 }
 
 u32 time_get_now_in_ms() {
+#ifdef _WIN32
+    return 0;
+#else
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -57,6 +61,7 @@ u32 time_get_now_in_ms() {
     rv += round(ts.tv_nsec / 1.0e6);
 
     return rv;
+#endif
 }
 
 int main(int argc, char *argv[]) {

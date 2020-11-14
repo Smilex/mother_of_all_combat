@@ -1,3 +1,5 @@
+#define _USE_MATH_DEFINES
+#include <math.h>
 #define STB_PERLIN_IMPLEMENTATION
 #include "stb_perlin.h"
 

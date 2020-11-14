@@ -124,6 +124,8 @@ struct ring_buffer {
             base[write_it] = data[i];
             ++write_it;
         }
+    
+        return amount;
     }
 
     u32 read(T *buffer, u32 size) {

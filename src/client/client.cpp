@@ -367,9 +367,9 @@ void draw_map(client_context *ctx) {
 
         Color color = ctx->clients.colors[ctx->map.units.owners[i]];
         if (ctx->map.units.names[i] == unit_names::SOLDIER) {
-            Vector2 bottom_left = (Vector2){.x = X, .y = Y + tile_height};
-            Vector2 top_middle = (Vector2){.x = X + tile_width / 2, .y = Y};
-            Vector2 bottom_right = (Vector2){.x = X + tile_width, .y = Y + tile_height};
+            Vector2 bottom_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height};
+            Vector2 top_middle = CLITERAL(Vector2){.x = X + tile_width / 2, .y = Y};
+            Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
             DrawTriangle(bottom_left, bottom_right, top_middle, color);
 
             color = BLACK;
@@ -379,9 +379,9 @@ void draw_map(client_context *ctx) {
             DrawTriangleLines(bottom_left, bottom_right,
                                 top_middle, color);
         } else if (ctx->map.units.names[i] == unit_names::CARAVAN) {
-            Vector2 mid_left = (Vector2){.x = X, .y = Y + tile_height / 2};
-            Vector2 top_right = (Vector2){.x = X + tile_width, .y = Y};
-            Vector2 bottom_right = (Vector2){.x = X + tile_width, .y = Y + tile_height};
+            Vector2 mid_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height / 2};
+            Vector2 top_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y};
+            Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
             DrawTriangle(mid_left, bottom_right, top_right, color);
 
             color = BLACK;
@@ -414,7 +414,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
             u8 red = rand() % 255;
             u8 green = rand() % 255;
             u8 blue = rand() % 255;
-            ctx->clients.colors[i] = (Color){red, green, blue, 255};
+            ctx->clients.colors[i] = CLITERAL(Color){red, green, blue, 255};
         }
 
         ctx->selected_town_id = -1;
@@ -423,14 +423,14 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
         real32 scr_width = GetScreenWidth();
         real32 scr_height = GetScreenHeight();
 
-        ctx->gui.town.rect = (Rectangle){GetScreenWidth() - 200, 0, 200, GetScreenHeight() / 2};
+        ctx->gui.town.rect = CLITERAL(Rectangle){scr_width - 200, 0.0f, 200.0f, scr_height / 2};
         ctx->gui.town.build_names[0] = "None";
         ctx->gui.town.build_names[1] = "Soldier";
         ctx->gui.town.build_names[2] = "Caravan";
 
-        ctx->gui.admin.rect = (Rectangle){GetScreenWidth() - 200, GetScreenHeight() / 2, 200, GetScreenHeight() / 2};
+        ctx->gui.admin.rect = CLITERAL(Rectangle){scr_width - 200, scr_height / 2, 200, scr_height / 2};
 
-        ctx->gui.end_turn.rect = (Rectangle){scr_width / 2 - 60, scr_height - 30, 120, 30};
+        ctx->gui.end_turn.rect = CLITERAL(Rectangle){scr_width / 2 - 60, scr_height - 30, 120, 30};
 
         ctx->background_music = LoadMusicStream("assets/trouble_with_tribals.mp3");
         SetMusicVolume(ctx->background_music, 0.03);
@@ -444,7 +444,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
         if (ctx->current_screen == client_screen_names::MAIN_MENU) {
             real32 scrWidth = GetScreenWidth();
             real32 scrHeight = GetScreenHeight();
-            if (GuiButton((Rectangle){scrWidth / 2 - 150 / 2, scrHeight / 2 - 15, 150, 30}, "Start")) {
+            if (GuiButton(CLITERAL(Rectangle){scrWidth / 2 - 150 / 2, scrHeight / 2 - 15, 150, 30}, "Start")) {
                 comm_client_header header;
                 header.name = comm_client_msg_names::CONNECT;
 
@@ -782,9 +782,9 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
             if (ctx->selected_town_id != -1) {
                 Rectangle town_window = ctx->gui.town.rect;
                 bool close = GuiWindowBox(town_window, "Town");
-                GuiLabel((Rectangle){town_window.x + 10, town_window.y + 30, town_window.width - 20, 20}, "Build:");
+                GuiLabel(CLITERAL(Rectangle){town_window.x + 10, town_window.y + 30, town_window.width - 20, 20}, "Build:");
                 s32 prev_active = ctx->gui.town.build_active;
-                s32 curr_active = GuiToggleGroup((Rectangle){town_window.x + 20, town_window.y + 50, town_window.width - 40, 30}, TextJoin((const char**)ctx->gui.town.build_names, 3, "\n"), ctx->gui.town.build_active);
+                s32 curr_active = GuiToggleGroup(CLITERAL(Rectangle){town_window.x + 20, town_window.y + 50, town_window.width - 40, 30}, TextJoin((const char**)ctx->gui.town.build_names, 3, "\n"), ctx->gui.town.build_active);
                 if (prev_active != curr_active) {
                     comm_client_header header;
                     header.name = comm_client_msg_names::SET_CONSTRUCTION;
@@ -805,7 +805,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
             Rectangle admin_window = ctx->gui.admin.rect;
             GuiWindowBox(admin_window, "Admin");
-                if (GuiButton((Rectangle){admin_window.x + 10, admin_window.y + 30, admin_window.width - 20, 20}, "DISCOVER")) {
+                if (GuiButton(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + 30, admin_window.width - 20, 20}, "DISCOVER")) {
                     comm_client_header header;
                     header.name = comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP;
 
@@ -813,9 +813,9 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 }
 
             if (!ctx->my_turn) {
-                Rectangle window = (Rectangle){scr_width / 2 - 150, scr_height / 2 - 30, 300, 60};
+                Rectangle window = CLITERAL(Rectangle){scr_width / 2 - 150, scr_height / 2 - 30, 300, 60};
                 GuiWindowBox(window, "Status");
-                    GuiLabel((Rectangle){window.x + 100, window.y + 25, window.width - 200, window.height - 25}, "Waiting on your turn");
+                    GuiLabel(CLITERAL(Rectangle){window.x + 100, window.y + 25, window.width - 200, window.height - 25}, "Waiting on your turn");
             }
         }
     EndDrawing();

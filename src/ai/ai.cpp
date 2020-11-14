@@ -68,7 +68,7 @@ void ai_update(memory_arena *mem, communication *comm) {
             u8 red = rand() % 255;
             u8 green = rand() % 255;
             u8 blue = rand() % 255;
-            ctx->clients.colors[i] = (Color){red, green, blue, 255};
+            ctx->clients.colors[i] = CLITERAL(Color){red, green, blue, 255};
         }
 
         ctx->current_state = ai_state_names::CONNECT;
