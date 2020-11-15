@@ -26,22 +26,11 @@ struct client_context {
         u32 width, height;
         client_terrain_names *terrain;
 
-        struct {
-            v2<u32> *positions;
-            u32 *server_ids;
-            unit_names *constructions;
-            s32 *owners;
-            u32 used, max;
-        } towns;
+        structure *towns;
+        u32 towns_used, towns_max;
 
-        struct {
-            v2<u32> *positions;
-            unit_names *names;
-            u32 *server_ids;
-            s32 *owners;
-            u32 *action_points;
-            u32 used, max;
-        } units;
+        unit *units;
+        u32 units_used, units_max;
     } map;
 
     struct {
@@ -77,25 +66,13 @@ struct client_context {
 };
 
 void order_unit_to_front(client_context *ctx, u32 unit_id) {
-    v2<u32> temp_pos = ctx->map.units.positions[unit_id];
-    unit_names temp_name = ctx->map.units.names[unit_id];
-    u32 temp_server_id = ctx->map.units.server_ids[unit_id];
-    s32 temp_owner = ctx->map.units.owners[unit_id];
-    u32 temp_action_points = ctx->map.units.action_points[unit_id];
+    unit temp = ctx->map.units[unit_id];
 
     for (s32 i = unit_id - 1; i >= 0; --i) {
-        ctx->map.units.positions[i + 1] = ctx->map.units.positions[i];
-        ctx->map.units.names[i + 1] = ctx->map.units.names[i];
-        ctx->map.units.server_ids[i + 1] = ctx->map.units.server_ids[i];
-        ctx->map.units.owners[i + 1] = ctx->map.units.owners[i];
-        ctx->map.units.action_points[i + 1] = ctx->map.units.action_points[i];
+        ctx->map.units[i + 1] = ctx->map.units[i];
     }
 
-    ctx->map.units.positions[0] = temp_pos;
-    ctx->map.units.names[0] = temp_name;
-    ctx->map.units.server_ids[0] = temp_server_id;
-    ctx->map.units.owners[0] = temp_owner;
-    ctx->map.units.action_points[0] = temp_action_points;
+    ctx->map.units[0] = temp;
 }
 
 bool is_pt_in_gui(client_context *ctx, Vector2 pt) {
@@ -239,46 +216,18 @@ void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 heigh
                                                                     * ctx->map.height
                                                                 );
 
-    ctx->map.towns.used = 0;
-    ctx->map.towns.max = 100;
-    ctx->map.towns.positions = (v2<u32> *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.towns.positions)
-                                            * ctx->map.towns.max
-                                            );
-    ctx->map.towns.server_ids = (u32 *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.towns.server_ids)
-                                            * ctx->map.towns.max
-                                            );
-    ctx->map.towns.owners = (s32 *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.towns.owners)
-                                            * ctx->map.towns.max
-                                            );
-    ctx->map.towns.constructions = (unit_names *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.towns.constructions)
-                                            * ctx->map.towns.max
+    ctx->map.towns_used = 0;
+    ctx->map.towns_max = 100;
+    ctx->map.towns = (structure *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.towns)
+                                            * ctx->map.towns_max
                                             );
 
-    ctx->map.units.used = 0;
-    ctx->map.units.max = 1000;
-    ctx->map.units.positions = (v2<u32> *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.units.positions)
-                                            * ctx->map.units.max
-                                            );
-    ctx->map.units.names = (unit_names *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.units.names)
-                                            * ctx->map.units.max
-                                            );
-    ctx->map.units.owners = (s32 *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.units.owners)
-                                            * ctx->map.units.max
-                                            );
-    ctx->map.units.server_ids = (u32 *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.units.server_ids)
-                                            * ctx->map.units.max
-                                            );
-    ctx->map.units.action_points = (u32 *)memory_arena_use(mem,
-                                            sizeof(*ctx->map.units.action_points)
-                                            * ctx->map.units.max
+    ctx->map.units_used = 0;
+    ctx->map.units_max = 1000;
+    ctx->map.units = (unit *)memory_arena_use(mem,
+                                            sizeof(*ctx->map.units)
+                                            * ctx->map.units_max
                                             );
 }
 
@@ -339,16 +288,16 @@ void draw_map(client_context *ctx) {
     }
 
 
-    for (u32 i = 0; i < ctx->map.towns.used; ++i) {
-        v2<u32> pos = ctx->map.towns.positions[i];
+    for (u32 i = 0; i < ctx->map.towns_used; ++i) {
+        v2<u32> pos = ctx->map.towns[i].ent.position;
         X = pos.x * tile_width + tile_width / 2;
         Y = pos.y * tile_height + tile_width / 2;
         X -= ctx->camera.x * tile_width;
         Y -= ctx->camera.y * tile_height;
         
         Color color = GRAY;
-        if (ctx->map.towns.owners[i] != -1) {
-            color = ctx->clients.colors[ctx->map.towns.owners[i]];
+        if (ctx->map.towns[i].ent.owner != -1) {
+            color = ctx->clients.colors[ctx->map.towns[i].ent.owner];
         }
         DrawCircle(X, Y, tile_width / 2, color);
 
@@ -358,15 +307,15 @@ void draw_map(client_context *ctx) {
         }
     }
 
-    for (u32 i = 0; i < ctx->map.units.used; ++i) {
-        v2<u32> pos = ctx->map.units.positions[i];
+    for (u32 i = 0; i < ctx->map.units_used; ++i) {
+        v2<u32> pos = ctx->map.units[i].ent.position;
         X = pos.x * tile_width;
         Y = pos.y * tile_height;
         X -= ctx->camera.x * tile_width;
         Y -= ctx->camera.y * tile_height;
 
-        Color color = ctx->clients.colors[ctx->map.units.owners[i]];
-        if (ctx->map.units.names[i] == unit_names::SOLDIER) {
+        Color color = ctx->clients.colors[ctx->map.units[i].ent.owner];
+        if (ctx->map.units[i].name == unit_names::SOLDIER) {
             Vector2 bottom_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height};
             Vector2 top_middle = CLITERAL(Vector2){.x = X + tile_width / 2, .y = Y};
             Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
@@ -378,7 +327,7 @@ void draw_map(client_context *ctx) {
             }
             DrawTriangleLines(bottom_left, bottom_right,
                                 top_middle, color);
-        } else if (ctx->map.units.names[i] == unit_names::CARAVAN) {
+        } else if (ctx->map.units[i].name == unit_names::CARAVAN) {
             Vector2 mid_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height / 2};
             Vector2 top_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y};
             Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
@@ -392,7 +341,7 @@ void draw_map(client_context *ctx) {
                                 top_right, color);
         }
         char num_buf[3 + 1];
-        snprintf(num_buf, 3 + 1, "%u", ctx->map.units.action_points[i]);
+        snprintf(num_buf, 3 + 1, "%u", ctx->map.units[i].action_points);
         DrawText(num_buf, X, Y, 16, WHITE);
     }
 }
@@ -514,17 +463,17 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 mouse_tile_pos.y += ctx->camera.y;
                 if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
                     if (ctx->selected_unit_id != -1) {
-                        if (ctx->map.units.names[ctx->selected_unit_id] == unit_names::SOLDIER) {
-                            v2<u32> selected_pos = ctx->map.units.positions[ctx->selected_unit_id];
+                        if (ctx->map.units[ctx->selected_unit_id].name == unit_names::SOLDIER) {
+                            v2<u32> selected_pos = ctx->map.units[ctx->selected_unit_id].ent.position;
                             v2<s32> d;
                             d.x = (s32)mouse_tile_pos.x - (s32)selected_pos.x;
                             d.y = (s32)mouse_tile_pos.y - (s32)selected_pos.y;
                             if ((d.x >= -1 && d.x <= 1) && (d.y >= -1 && d.y <= 1)) {
                                 bool found = false;
                                 u32 town_id;
-                                for (town_id = 0; town_id < ctx->map.towns.used; ++town_id) {
-                                    bool same_owner = ctx->map.towns.owners[town_id] == ctx->map.units.owners[ctx->selected_unit_id];
-                                    if (!same_owner && ctx->map.towns.positions[town_id] == mouse_tile_pos) {
+                                for (town_id = 0; town_id < ctx->map.towns_used; ++town_id) {
+                                    bool same_owner = ctx->map.towns[town_id].ent.owner == ctx->map.units[ctx->selected_unit_id].ent.owner;
+                                    if (!same_owner && ctx->map.towns[town_id].ent.position == mouse_tile_pos) {
                                         found = true;
                                         break;
                                     }
@@ -533,19 +482,19 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                                 if (found) {
                                 } else {
                                     u32 unit_id;
-                                    for (unit_id = 0; unit_id < ctx->map.units.used; ++unit_id) {
+                                    for (unit_id = 0; unit_id < ctx->map.units_used; ++unit_id) {
                                         if (unit_id == ctx->selected_unit_id) continue;
-                                        bool same_owner = ctx->map.units.owners[unit_id] == ctx->map.units.owners[ctx->selected_unit_id];
-                                        if (ctx->map.units.positions[unit_id] == mouse_tile_pos) {
+                                        bool same_owner = ctx->map.units[unit_id].ent.owner == ctx->map.units[ctx->selected_unit_id].ent.owner;
+                                        if (ctx->map.units[unit_id].ent.position == mouse_tile_pos) {
                                             found = true;
                                             break;
                                         }
                                     }
 
                                     if (found) {
-                                        if (ctx->map.units.names[unit_id] == unit_names::CARAVAN) {
-                                            u32 caravan_server_id = ctx->map.units.server_ids[unit_id];
-                                            u32 unit_server_id = ctx->map.units.server_ids[ctx->selected_unit_id];
+                                        if (ctx->map.units[unit_id].name == unit_names::CARAVAN) {
+                                            u32 caravan_server_id = ctx->map.units[unit_id].ent.server_id;
+                                            u32 unit_server_id = ctx->map.units[ctx->selected_unit_id].ent.server_id;
 
                                             comm_client_header header;
                                             header.name = comm_client_msg_names::LOAD_UNIT;
@@ -561,7 +510,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                                         header.name = comm_client_msg_names::MOVE_UNIT;
                                         comm_write(comm, &header, sizeof(header));
                                         comm_client_move_unit_body body;
-                                        body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
+                                        body.unit_id = ctx->map.units[ctx->selected_unit_id].ent.server_id;
                                         body.delta = d;
                                         comm_write(comm, &body, sizeof(body));
                                     }
@@ -569,8 +518,8 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             } else {
                                 ctx->selected_unit_id = -1;
                             }
-                        } else if (ctx->map.units.names[ctx->selected_unit_id] == unit_names::CARAVAN) {
-                            v2<u32> prev_path = ctx->map.units.positions[ctx->selected_unit_id];
+                        } else if (ctx->map.units[ctx->selected_unit_id].name == unit_names::CARAVAN) {
+                            v2<u32> prev_path = ctx->map.units[ctx->selected_unit_id].ent.position;
                             v2<u32> *paths;
                             u32 num_paths = get_path_for_caravan(ctx, prev_path, mouse_tile_pos, &ctx->temp_mem, &paths);
 
@@ -579,7 +528,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                                 header.name = comm_client_msg_names::MOVE_UNIT;
                                 comm_write(comm, &header, sizeof(header));
                                 comm_client_move_unit_body body;
-                                body.unit_id = ctx->map.units.server_ids[ctx->selected_unit_id];
+                                body.unit_id = ctx->map.units[ctx->selected_unit_id].ent.server_id;
                                 v2<s32> d;
                                 d.x = (s32)paths[i].x - (s32)prev_path.x;
                                 d.y = (s32)paths[i].y - (s32)prev_path.y;
@@ -592,9 +541,9 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                     }
                 } else if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
                     bool found = false;
-                    for (u32 i = 0; i < ctx->map.units.used; ++i) {
-                        if (mouse_tile_pos.x == ctx->map.units.positions[i].x &&
-                            mouse_tile_pos.y == ctx->map.units.positions[i].y) {
+                    for (u32 i = 0; i < ctx->map.units_used; ++i) {
+                        if (mouse_tile_pos.x == ctx->map.units[i].ent.position.x &&
+                            mouse_tile_pos.y == ctx->map.units[i].ent.position.y) {
                             if (ctx->selected_unit_id == i) {
                                 ctx->selected_unit_id = -1;
                             } else {
@@ -607,11 +556,11 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                     }
                     if (!found) {
                         if (ctx->selected_unit_id == -1) {
-                            for (u32 i = 0; i < ctx->map.towns.used; ++i) {
-                                if (mouse_tile_pos.x == ctx->map.towns.positions[i].x &&
-                                    mouse_tile_pos.y == ctx->map.towns.positions[i].y) {
+                            for (u32 i = 0; i < ctx->map.towns_used; ++i) {
+                                if (mouse_tile_pos.x == ctx->map.towns[i].ent.position.x &&
+                                    mouse_tile_pos.y == ctx->map.towns[i].ent.position.y) {
                                     ctx->selected_town_id = i;
-                                    ctx->gui.town.build_active = (s32)ctx->map.towns.constructions[i];
+                                    ctx->gui.town.build_active = (s32)ctx->map.towns[i].construction;
                                     found = true;
                                     break;
                                 }
@@ -654,10 +603,10 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             discover_town_body = (comm_server_discover_town_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*discover_town_body);
 
-                            u32 id = ctx->map.towns.used++;
-                            ctx->map.towns.positions[id] = discover_town_body->position;
-                            ctx->map.towns.owners[id] = discover_town_body->owner;
-                            ctx->map.towns.server_ids[id] = discover_town_body->id;
+                            u32 id = ctx->map.towns_used++;
+                            ctx->map.towns[id].ent.position = discover_town_body->position;
+                            ctx->map.towns[id].ent.owner = discover_town_body->owner;
+                            ctx->map.towns[id].ent.server_id = discover_town_body->id;
 
                             if (discover_town_body->owner == ctx->my_server_id) {
                                 s32 camera_x = (s32)discover_town_body->position.x;
@@ -683,9 +632,9 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         if (len - buf_it >= sizeof(*body)) {
                             body = (comm_server_set_unit_action_points_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*body);
-                            for (u32 i = 0; i < ctx->map.units.used; ++i) {
-                                if (ctx->map.units.server_ids[i] == body->unit_id) {
-                                    ctx->map.units.action_points[i] = body->new_action_points;
+                            for (u32 i = 0; i < ctx->map.units_used; ++i) {
+                                if (ctx->map.units[i].ent.server_id == body->unit_id) {
+                                    ctx->map.units[i].action_points = body->new_action_points;
                                 }
                             }
                         }
@@ -695,12 +644,12 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             construction_set_body = (comm_server_construction_set_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*construction_set_body);
 
-                            for (u32 i = 0; i < ctx->map.towns.used; ++i) {
-                                if (ctx->map.towns.server_ids[i] == construction_set_body->town_id) {
-                                    ctx->map.towns.constructions[i] = construction_set_body->unit_name;
+                            for (u32 i = 0; i < ctx->map.towns_used; ++i) {
+                                if (ctx->map.towns[i].ent.server_id == construction_set_body->town_id) {
+                                    ctx->map.towns[i].construction = construction_set_body->unit_name;
                                 }
                             }
-                            if (ctx->selected_town_id != -1 && ctx->map.towns.server_ids[ctx->selected_town_id] == construction_set_body->town_id) {
+                            if (ctx->selected_town_id != -1 && ctx->map.towns[ctx->selected_town_id].ent.server_id == construction_set_body->town_id) {
                                 ctx->gui.town.build_active = (s32)construction_set_body->unit_name;
                             }
                         }
@@ -710,22 +659,22 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             add_unit_body = (comm_server_add_unit_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*add_unit_body);
 
-                            u32 id = ctx->map.units.used++;
-                            ctx->map.units.server_ids[id] = add_unit_body->unit_id;
-                            ctx->map.units.positions[id] = add_unit_body->position;
-                            ctx->map.units.names[id] = add_unit_body->unit_name;
-                            ctx->map.units.action_points[id] = add_unit_body->action_points;
-                            ctx->map.units.owners[id] = ctx->my_server_id;
+                            u32 id = ctx->map.units_used++;
+                            ctx->map.units[id].ent.server_id = add_unit_body->unit_id;
+                            ctx->map.units[id].ent.position = add_unit_body->position;
+                            ctx->map.units[id].name = add_unit_body->unit_name;
+                            ctx->map.units[id].action_points = add_unit_body->action_points;
+                            ctx->map.units[id].ent.owner = ctx->my_server_id;
                         }
                     } else if (header->name == comm_server_msg_names::MOVE_UNIT) {
                         comm_server_move_unit_body *move_unit_body;
                         if (len - buf_it >= sizeof(*move_unit_body)) {
                             move_unit_body = (comm_server_move_unit_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*move_unit_body);
-                            for (u32 i = 0; i < ctx->map.units.used; ++i) {
-                                if (ctx->map.units.server_ids[i] == move_unit_body->unit_id) {
-                                    ctx->map.units.positions[i] = move_unit_body->new_position;
-                                    ctx->map.units.action_points[i] = move_unit_body->action_points_left;
+                            for (u32 i = 0; i < ctx->map.units_used; ++i) {
+                                if (ctx->map.units[i].ent.server_id == move_unit_body->unit_id) {
+                                    ctx->map.units[i].ent.position = move_unit_body->new_position;
+                                    ctx->map.units[i].action_points = move_unit_body->action_points_left;
                                     break;
                                 }
                             }
@@ -735,12 +684,12 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         if (len - buf_it >= sizeof(*load_unit_body)) {
                             load_unit_body = (comm_server_load_unit_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*load_unit_body);
-                            for (u32 i = 0; i < ctx->map.units.used; ++i) {
-                                if (ctx->map.units.server_ids[i] == load_unit_body->unit_that_loads) {
-                                    for (u32 j = 0; j < ctx->map.units.used; ++j) {
-                                        if (ctx->map.units.server_ids[j] == load_unit_body->unit_to_load) {
-                                            ctx->map.units.action_points[j] = load_unit_body->action_points_left;
-                                            ctx->map.units.positions[j] = load_unit_body->new_position;
+                            for (u32 i = 0; i < ctx->map.units_used; ++i) {
+                                if (ctx->map.units[i].ent.server_id == load_unit_body->unit_that_loads) {
+                                    for (u32 j = 0; j < ctx->map.units_used; ++j) {
+                                        if (ctx->map.units[j].ent.server_id == load_unit_body->unit_to_load) {
+                                            ctx->map.units[j].action_points = load_unit_body->action_points_left;
+                                            ctx->map.units[j].ent.position = load_unit_body->new_position;
                                             order_unit_to_front(ctx, i);
                                             break;
                                         }
@@ -758,8 +707,8 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                 v2<real32> unit_world_pos;
                 v2<real32> unit_screen_pos;
                 v2<real32> unit_screen_pos_centered;
-                unit_world_pos.x = ctx->map.units.positions[ctx->selected_unit_id].x * 32;
-                unit_world_pos.y = ctx->map.units.positions[ctx->selected_unit_id].y * 32;
+                unit_world_pos.x = ctx->map.units[ctx->selected_unit_id].ent.position.x * 32;
+                unit_world_pos.y = ctx->map.units[ctx->selected_unit_id].ent.position.y * 32;
                 unit_screen_pos.x = unit_world_pos.x - (ctx->camera.x * 32);
                 unit_screen_pos.y = unit_world_pos.y - (ctx->camera.y * 32);
                 unit_screen_pos_centered.x = unit_screen_pos.x + 16;
@@ -792,7 +741,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                     comm_write(comm, &header, sizeof(header));
 
                     comm_client_set_construction_body body;
-                    body.town_id = ctx->map.towns.server_ids[ctx->selected_town_id];
+                    body.town_id = ctx->map.towns[ctx->selected_town_id].ent.server_id;
                     body.unit_name = (unit_names)curr_active;
 
                     comm_write(comm, &body, sizeof(body));

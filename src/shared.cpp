@@ -420,3 +420,20 @@ struct dictionary {
         return NULL;
     }
 };
+
+struct entity {
+    v2<u32> position;
+    s32 owner;
+    u32 server_id;
+};
+
+struct structure {
+    struct entity ent;
+    unit_names construction;
+};
+
+struct unit {
+    struct entity ent;
+    unit_names name;
+    u32 action_points;
+};
