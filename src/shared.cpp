@@ -430,10 +430,12 @@ struct entity {
 struct structure {
     struct entity ent;
     unit_names construction;
+    u32 construction_timer;
 };
 
 struct unit {
     struct entity ent;
     unit_names name;
     u32 action_points;
+    s32 slot;
 };

@@ -23,21 +23,10 @@ struct server_context {
         terrain_names *terrain;
         u32 terrain_width,
             terrain_height;
-        struct {
-            v2<u32> *positions;
-            unit_names *constructions;
-            u32 *construction_timers;
-            s32 *owners;
-            u32 used, max;
-        } towns;
-        struct {
-            v2<u32> *positions;
-            unit_names *names;
-            s32 *owners;
-            u32 *action_points;
-            s32 *slots;
-            u32 used, max;
-        } units;
+        structure *towns;
+        u32 towns_used, towns_max;
+        unit *units;
+        u32 units_used, units_max;
     } map;
 
     struct {
@@ -53,18 +42,18 @@ void add_unit(communication *comm, server_context *ctx, v2<u32> pos, unit_names 
     header.name = comm_server_msg_names::ADD_UNIT;
     comm_write(comm, &header, sizeof(header));
 
-    u32 id = ctx->map.units.used++;
-    ctx->map.units.positions[id] = pos;
-    ctx->map.units.names[id] = name;
-    ctx->map.units.owners[id] = owner;
+    u32 id = ctx->map.units_used++;
+    ctx->map.units[id].ent.position = pos;
+    ctx->map.units[id].name = name;
+    ctx->map.units[id].ent.owner = owner;
     if (name == unit_names::SOLDIER)
-        ctx->map.units.action_points[id] = 1;
+        ctx->map.units[id].action_points = 1;
     else if (name == unit_names::CARAVAN)
-        ctx->map.units.action_points[id] = 5;
+        ctx->map.units[id].action_points = 5;
 
     comm_server_add_unit_body add_unit_body;
     add_unit_body.unit_id = id;
-    add_unit_body.action_points = ctx->map.units.action_points[id];
+    add_unit_body.action_points = ctx->map.units[id].action_points;
     add_unit_body.position = pos;
     add_unit_body.unit_name = name;
     comm_write(comm, &add_unit_body, sizeof(add_unit_body));
@@ -225,8 +214,8 @@ void discover_3x3(communication *comm, server_context *ctx, v2<u32> center) {
     comm_write(comm, &discover_body, sizeof(discover_body));
     comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
 
-    for (u32 i = 0; i < ctx->map.towns.used; ++i) {
-        v2<u32> town_pos = ctx->map.towns.positions[i];
+    for (u32 i = 0; i < ctx->map.towns_used; ++i) {
+        v2<u32> town_pos = ctx->map.towns[i].ent.position;
         v2<s32> d;
         d.x = (s32)town_pos.x - (s32)center.x;
         d.y = (s32)town_pos.y - (s32)center.y;
@@ -237,7 +226,7 @@ void discover_3x3(communication *comm, server_context *ctx, v2<u32> center) {
 
             comm_server_discover_town_body discover_town_body;
             discover_town_body.id = i;
-            discover_town_body.owner = ctx->map.towns.owners[i];
+            discover_town_body.owner = ctx->map.towns[i].ent.owner;
             discover_town_body.position = town_pos;
             comm_write(comm, &discover_town_body, sizeof(discover_town_body));
         }
@@ -266,7 +255,7 @@ void generate_map(server_context *ctx) {
 
     // TODO: Find some better way to determine how many islands should be generated
     u32 num_islands = 50;
-    assert(num_islands <= ctx->map.towns.max);
+    assert(num_islands <= ctx->map.towns_max);
     real32 min_radius = 4;
     v2<u32> *island_centers = (v2<u32> *)memory_arena_use(&ctx->temp_buffer, sizeof(*island_centers)
                                                             * num_islands);
@@ -370,17 +359,17 @@ void generate_map(server_context *ctx) {
         }
 
         v2<u32> pos = {.x = iter_x, .y = iter_y};
-        ctx->map.towns.positions[ctx->map.towns.used] = pos;
-        ctx->map.towns.owners[ctx->map.towns.used] = -1;
-        ctx->map.towns.constructions[ctx->map.towns.used] = unit_names::NONE;
-        ctx->map.towns.used++;
+        ctx->map.towns[ctx->map.towns_used].ent.position = pos;
+        ctx->map.towns[ctx->map.towns_used].ent.owner = -1;
+        ctx->map.towns[ctx->map.towns_used].construction = unit_names::NONE;
+        ctx->map.towns_used++;
     }
 
     for (u32 i = 0; i < ctx->clients.used; ++i) {
         for (;;) {
-            u32 town = rand() % ctx->map.towns.used;
-            if (ctx->map.towns.owners[town] == -1) {
-                ctx->map.towns.owners[town] = i;
+            u32 town = rand() % ctx->map.towns_used;
+            if (ctx->map.towns[town].ent.owner == -1) {
+                ctx->map.towns[town].ent.owner = i;
                 break;
             }
         }
@@ -415,14 +404,14 @@ void send_entire_map(communication *comm, server_context *ctx) {
     }
     comm_write(comm, tiles, size_of_tiles);
 
-    for (u32 i = 0; i < ctx->map.towns.used; ++i) {
+    for (u32 i = 0; i < ctx->map.towns_used; ++i) {
         header.name = comm_server_msg_names::DISCOVER_TOWN;
         comm_write(comm, &header, sizeof(header));
 
         comm_server_discover_town_body discover_town_body;
         discover_town_body.id = i;
-        discover_town_body.owner = ctx->map.towns.owners[i];
-        discover_town_body.position = ctx->map.towns.positions[i];
+        discover_town_body.owner = ctx->map.towns[i].ent.owner;
+        discover_town_body.position = ctx->map.towns[i].ent.position;
         comm_write(comm, &discover_town_body, sizeof(discover_town_body));
     }
 }
@@ -465,51 +454,21 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 * ctx->map.terrain_height
                                                 );
 
-        ctx->map.towns.used = 0;
-        ctx->map.towns.max = 100;
-        ctx->map.towns.positions = (v2<u32> *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.towns.positions)
-                                                * ctx->map.towns.max
+        ctx->map.towns_used = 0;
+        ctx->map.towns_max = 100;
+        ctx->map.towns = (structure *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.towns)
+                                                * ctx->map.towns_max
                                                 );
-        ctx->map.towns.owners = (s32 *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.towns.owners)
-                                                * ctx->map.towns.max
+        ctx->map.units_used = 0;
+        ctx->map.units_max = 10000;
+        ctx->map.units = (unit *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.units)
+                                                * ctx->map.units_max
                                                 );
-        ctx->map.towns.constructions = (unit_names *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.towns.constructions)
-                                                * ctx->map.towns.max
-                                                );
-        ctx->map.towns.construction_timers = (u32 *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.towns.construction_timers)
-                                                * ctx->map.towns.max
-                                                );
-        ctx->map.units.used = 0;
-        ctx->map.units.max = 10000;
-        ctx->map.units.positions = (v2<u32> *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.units.positions)
-                                                * ctx->map.units.max
-                                                );
-        ctx->map.units.names = (unit_names *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.units.names)
-                                                * ctx->map.units.max
-                                                );
-        ctx->map.units.owners = (s32 *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.units.owners)
-                                                * ctx->map.units.max
-                                                );
-        for (u32 i = 0; i < ctx->map.units.max; ++i) {
-            ctx->map.units.owners[i] = -1;
-        }
-        ctx->map.units.action_points = (u32 *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.units.action_points)
-                                                * ctx->map.units.max
-                                                );
-        ctx->map.units.slots = (s32 *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.units.slots)
-                                                * ctx->map.units.max
-                                                );
-        for (u32 i = 0; i < ctx->map.units.max; ++i) {
-            ctx->map.units.slots[i] = -1;
+        for (u32 i = 0; i < ctx->map.units_max; ++i) {
+            ctx->map.units[i].ent.owner = -1;
+            ctx->map.units[i].slot = -1;
         }
 
         generate_map(ctx);
@@ -558,20 +517,20 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 
             comm_flush(&ctx->clients.comms[i]);
 
-            for (u32 j = 0; j < ctx->map.towns.used; ++j) {
-                if (ctx->map.towns.owners[j] == i) {
-                    discover_3x3(comm, ctx, ctx->map.towns.positions[j]);
+            for (u32 j = 0; j < ctx->map.towns_used; ++j) {
+                if (ctx->map.towns[j].ent.owner == i) {
+                    discover_3x3(comm, ctx, ctx->map.towns[j].ent.position);
 
                     comm_server_discover_town_body discover_town_body;
 
                     header.name = comm_server_msg_names::DISCOVER_TOWN;
                     comm_write(comm, &header, sizeof(header));
-                    discover_town_body.position = ctx->map.towns.positions[j];
+                    discover_town_body.position = ctx->map.towns[j].ent.position;
                     discover_town_body.id = j;
-                    discover_town_body.owner = ctx->map.towns.owners[j];
+                    discover_town_body.owner = ctx->map.towns[j].ent.owner;
                     comm_write(comm, &discover_town_body, sizeof(discover_town_body));
 
-                    add_unit(comm, ctx, ctx->map.towns.positions[j], unit_names::SOLDIER, i);
+                    add_unit(comm, ctx, ctx->map.towns[j].ent.position, unit_names::SOLDIER, i);
 
                     comm_flush(comm);
                 }
@@ -610,12 +569,12 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                             head.name = comm_server_msg_names::YOUR_TURN;
                             comm_write(c, &head, sizeof(head));
 
-                            for (u32 j = 0; j < ctx->map.units.used; ++j) {
-                                if (ctx->map.units.owners[j] == ctx->current_turn_id) {
-                                    if (ctx->map.units.names[j] == unit_names::SOLDIER) {
-                                        ctx->map.units.action_points[j] = 1;
-                                    } else if (ctx->map.units.names[j] == unit_names::CARAVAN) {
-                                        ctx->map.units.action_points[j] = 5;
+                            for (u32 j = 0; j < ctx->map.units_used; ++j) {
+                                if (ctx->map.units[j].ent.owner == ctx->current_turn_id) {
+                                    if (ctx->map.units[j].name == unit_names::SOLDIER) {
+                                        ctx->map.units[j].action_points = 1;
+                                    } else if (ctx->map.units[j].name == unit_names::CARAVAN) {
+                                        ctx->map.units[j].action_points = 5;
                                     }
 
                                     head.name = comm_server_msg_names::SET_UNIT_ACTION_POINTS;
@@ -623,16 +582,16 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 
                                     comm_server_set_unit_action_points_body body;
                                     body.unit_id = j;
-                                    body.new_action_points = ctx->map.units.action_points[j];
+                                    body.new_action_points = ctx->map.units[j].action_points;
                                     comm_write(c, &body, sizeof(body));
                                 }
                             }
 
-                            for (u32 j = 0; j < ctx->map.towns.used; ++j) {
-                                if (ctx->map.towns.owners[j] == ctx->current_turn_id) {
-                                    unit_names name = ctx->map.towns.constructions[j];
+                            for (u32 j = 0; j < ctx->map.towns_used; ++j) {
+                                if (ctx->map.towns[j].ent.owner == ctx->current_turn_id) {
+                                    unit_names name = ctx->map.towns[j].construction;
                                     if (name != unit_names::NONE) {
-                                        u32 timer = --ctx->map.towns.construction_timers[j];
+                                        u32 timer = --ctx->map.towns[j].construction_timer;
                                         if (timer == 0) {
                                             if (name == unit_names::SOLDIER) {
                                                 timer = 3;
@@ -640,9 +599,9 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 timer = 5;
                                             }
 
-                                            add_unit(c, ctx, ctx->map.towns.positions[j], name, ctx->current_turn_id);
+                                            add_unit(c, ctx, ctx->map.towns[j].ent.position, name, ctx->current_turn_id);
 
-                                            ctx->map.towns.construction_timers[j] = timer;
+                                            ctx->map.towns[j].construction_timer = timer;
                                         }
                                     }
                                 }
@@ -653,14 +612,14 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                             comm_client_set_construction_body *body =
                                 (comm_client_set_construction_body *)(ctx->read_buffer.base + read_it);
                             read_it += sizeof(*body);
-                            s32 owner = ctx->map.towns.owners[body->town_id];
+                            s32 owner = ctx->map.towns[body->town_id].ent.owner;
                             if (owner == i) {
-                                ctx->map.towns.constructions[body->town_id] = body->unit_name;
+                                ctx->map.towns[body->town_id].construction = body->unit_name;
 
                                 if (body->unit_name == unit_names::SOLDIER) {
-                                    ctx->map.towns.construction_timers[body->town_id] = 3;
+                                    ctx->map.towns[body->town_id].construction_timer = 3;
                                 } else if (body->unit_name == unit_names::CARAVAN) {
-                                    ctx->map.towns.construction_timers[body->town_id] = 5;
+                                    ctx->map.towns[body->town_id].construction_timer = 5;
                                 }
 
                                 comm_server_header head;
@@ -668,7 +627,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                 comm_write(comm, &head, sizeof(head));
 
                                 comm_server_construction_set_body b;
-                                b.construction_timer = ctx->map.towns.construction_timers[body->town_id];
+                                b.construction_timer = ctx->map.towns[body->town_id].construction_timer;
                                 b.town_id = body->town_id;
                                 b.unit_name = body->unit_name;
                                 comm_write(comm, &b, sizeof(b));
@@ -678,22 +637,22 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                         comm_client_move_unit_body *body =
                             (comm_client_move_unit_body *)(ctx->read_buffer.base + read_it);
                         read_it += sizeof(*body);
-                        s32 owner = ctx->map.units.owners[body->unit_id];
+                        s32 owner = ctx->map.units[body->unit_id].ent.owner;
                         if (owner == i) {
                             u32 id = body->unit_id;
                             v2<s32> d = body->delta;
 
-                            u32 action_points = ctx->map.units.action_points[id];
+                            u32 action_points = ctx->map.units[id].action_points;
                             if (action_points > 0) {
                                 action_points--;
 
-                                v2<u32> pos = ctx->map.units.positions[id];
+                                v2<u32> pos = ctx->map.units[id].ent.position;
                                 pos.x += d.x;
                                 pos.y += d.y;
 
                                 u32 idx = pos.y * ctx->map.terrain_width + pos.x;
                                 bool passable = false;
-                                unit_names name = ctx->map.units.names[id];
+                                unit_names name = ctx->map.units[id].name;
                                 terrain_names terrain = ctx->map.terrain[idx];
                                 if (name == unit_names::SOLDIER) {
                                     if (terrain == terrain_names::GROUND) {
@@ -707,24 +666,24 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                 }
 
                                 if (passable) {
-                                    ctx->map.units.action_points[id] = action_points;
-                                    ctx->map.units.positions[id] = pos;
+                                    ctx->map.units[id].action_points = action_points;
+                                    ctx->map.units[id].ent.position = pos;
 
                                     comm_server_header head;
                                     head.name = comm_server_msg_names::MOVE_UNIT;
                                     comm_server_move_unit_body b;
                                     b.unit_id = id;
-                                    b.action_points_left = ctx->map.units.action_points[id];
+                                    b.action_points_left = ctx->map.units[id].action_points;
                                     b.new_position = pos;
                                     comm_write(comm, &head, sizeof(head));
                                     comm_write(comm, &b, sizeof(b));
 
                                     discover_3x3(comm, ctx, pos);
 
-                                    if (ctx->map.units.slots[id] != -1) {
+                                    if (ctx->map.units[id].slot != -1) {
                                         head.name = comm_server_msg_names::MOVE_UNIT;
-                                        b.unit_id = ctx->map.units.slots[id];
-                                        b.action_points_left = ctx->map.units.action_points[b.unit_id];
+                                        b.unit_id = ctx->map.units[id].slot;
+                                        b.action_points_left = ctx->map.units[b.unit_id].action_points;
                                         b.new_position = pos;
                                         comm_write(comm, &head, sizeof(head));
                                         comm_write(comm, &b, sizeof(b));
@@ -736,17 +695,17 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                         comm_client_load_unit_body *body =
                             (comm_client_load_unit_body *)(ctx->read_buffer.base + read_it);
                         read_it += sizeof(*body);
-                        s32 owner_that_loads = ctx->map.units.owners[body->unit_that_loads];
-                        s32 owner = ctx->map.units.owners[body->unit_to_load];
+                        s32 owner_that_loads = ctx->map.units[body->unit_that_loads].ent.owner;
+                        s32 owner = ctx->map.units[body->unit_to_load].ent.owner;
                         if (owner == i && i == owner_that_loads) {
                             u32 id = body->unit_to_load;
                             u32 id_that_loads = body->unit_that_loads;
-                            u32 action_points = ctx->map.units.action_points[id];
+                            u32 action_points = ctx->map.units[id].action_points;
                             if (action_points > 0) {
                                 --action_points;
 
-                                ctx->map.units.action_points[id] = action_points;
-                                ctx->map.units.positions[id] = ctx->map.units.positions[id_that_loads];
+                                ctx->map.units[id].action_points = action_points;
+                                ctx->map.units[id].ent.position = ctx->map.units[id_that_loads].ent.position;
 
                                 comm_server_header head;
                                 head.name = comm_server_msg_names::LOAD_UNIT;
@@ -755,10 +714,10 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                 b.unit_that_loads = id_that_loads;
                                 b.unit_to_load = id;
                                 b.action_points_left = action_points;
-                                b.new_position = ctx->map.units.positions[id_that_loads];
+                                b.new_position = ctx->map.units[id_that_loads].ent.position;
                                 comm_write(comm, &b, sizeof(b));
 
-                                ctx->map.units.slots[id_that_loads] = id;
+                                ctx->map.units[id_that_loads].slot = id;
                             }
                         }
                     }
