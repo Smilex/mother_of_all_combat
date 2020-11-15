@@ -427,14 +427,12 @@ struct entity {
     u32 server_id;
 };
 
-struct structure {
-    struct entity ent;
+struct structure : public entity {
     unit_names construction;
     u32 construction_timer;
 };
 
-struct unit {
-    struct entity ent;
+struct unit : public entity {
     unit_names name;
     u32 action_points;
     s32 slot;
