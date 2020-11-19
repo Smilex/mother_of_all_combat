@@ -55,6 +55,11 @@ enum terrain_names {
     HILLS
 };
 
+enum class entity_types {
+    STRUCTURE,
+    UNIT
+};
+
 enum class unit_names {
     NONE,
     SOLDIER,
@@ -422,6 +427,7 @@ struct dictionary {
 };
 
 struct entity {
+    entity_types type;
     v2<u32> position;
     s32 owner;
     u32 server_id;
@@ -437,3 +443,18 @@ struct unit : public entity {
     u32 action_points;
     s32 slot;
 };
+
+entity *
+find_entity_by_server_id(doubly_linked_list<entity *> entities, u32 id) {
+    auto iter = entities.first;
+
+    while (iter) {
+        auto ent = iter->payload;
+        if (ent->server_id == id)
+            return ent;
+
+        iter = iter->next;
+    }
+
+    return NULL;
+}
