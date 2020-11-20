@@ -731,28 +731,40 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             discover_town_body = (comm_server_discover_town_body *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*discover_town_body);
 
-                            unit *u = (unit *)memory_arena_use(mem, sizeof(*u));
-                            ctx->map.entities.push_front(u);
-                            u->type = entity_types::STRUCTURE;
-                            u->position = discover_town_body->position;
-                            u->owner = discover_town_body->owner;
-                            u->server_id = discover_town_body->id;
+                            bool found = false;
+                            auto ent_iter = ctx->map.entities.first;
+                            while (ent_iter) {
+                                auto ent = ent_iter->payload;
+                                if (ent->server_id == discover_town_body->id) {
+                                    found = true;
+                                }
+                                ent_iter = ent_iter->next;
+                            }
 
-                            if (discover_town_body->owner == ctx->my_server_id) {
-                                s32 camera_x = (s32)discover_town_body->position.x;
-                                s32 camera_y = (s32)discover_town_body->position.y;
-                                u32 num_tiles_in_scr_width = scr_width / 32;
-                                u32 num_tiles_in_scr_height = scr_height / 32;
-                                u32 half_scr_width = num_tiles_in_scr_width >> 1;
-                                u32 half_scr_height = num_tiles_in_scr_height >> 1;
-                                camera_x -= half_scr_width;
-                                if (camera_x < 0)
-                                    camera_x = 0;
-                                camera_y -= half_scr_height;
-                                if (camera_y < 0)
-                                    camera_y = 0;
-                                ctx->camera.x = camera_x;
-                                ctx->camera.y = camera_y;
+                            if (!found) {
+                                structure *town = (structure *)memory_arena_use(mem, sizeof(*town));
+                                ctx->map.entities.push_front(town);
+                                town->type = entity_types::STRUCTURE;
+                                town->position = discover_town_body->position;
+                                town->owner = discover_town_body->owner;
+                                town->server_id = discover_town_body->id;
+
+                                if (discover_town_body->owner == ctx->my_server_id) {
+                                    s32 camera_x = (s32)discover_town_body->position.x;
+                                    s32 camera_y = (s32)discover_town_body->position.y;
+                                    u32 num_tiles_in_scr_width = scr_width / 32;
+                                    u32 num_tiles_in_scr_height = scr_height / 32;
+                                    u32 half_scr_width = num_tiles_in_scr_width >> 1;
+                                    u32 half_scr_height = num_tiles_in_scr_height >> 1;
+                                    camera_x -= half_scr_width;
+                                    if (camera_x < 0)
+                                        camera_x = 0;
+                                    camera_y -= half_scr_height;
+                                    if (camera_y < 0)
+                                        camera_y = 0;
+                                    ctx->camera.x = camera_x;
+                                    ctx->camera.y = camera_y;
+                                }
                             }
                         }
                     } else if (header->name == comm_server_msg_names::YOUR_TURN) {
