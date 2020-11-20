@@ -308,11 +308,11 @@ void generate_map(server_context *ctx, memory_arena *mem) {
             u32 idx = y * ctx->map.terrain_height + x;
             real32 value = interpolate(noise_map[idx], circles_map[idx], 1.0);
             if (value > 0.6) {
-                ctx->map.terrain[idx] = terrain_names::HILLS;
-            } else if (value > 0.0) {
-                ctx->map.terrain[idx] = terrain_names::GROUND;
-            } else {
                 ctx->map.terrain[idx] = terrain_names::WATER;
+            } else if (value > 0.0) {
+                ctx->map.terrain[idx] = terrain_names::GRASS;
+            } else {
+                ctx->map.terrain[idx] = terrain_names::DESERT;
             }
         }
     }
@@ -363,7 +363,7 @@ void generate_map(server_context *ctx, memory_arena *mem) {
                     iter_y += dir_y;
 
             u32 idx = iter_y * ctx->map.terrain_width + iter_x;
-            if (ctx->map.terrain[idx] == terrain_names::GROUND) {
+            if (ctx->map.terrain[idx] == terrain_names::GRASS) {
                 found = true;
             }
         }
@@ -695,12 +695,12 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                     unit_names name = u->name;
                                     terrain_names terrain = ctx->map.terrain[idx];
                                     if (name == unit_names::SOLDIER) {
-                                        if (terrain == terrain_names::GROUND) {
+                                        if (terrain == terrain_names::GRASS) {
                                             passable = true;
                                         }
                                     } else if (name == unit_names::CARAVAN) {
-                                        if (terrain == terrain_names::GROUND ||
-                                            terrain == terrain_names::WATER) {
+                                        if (terrain == terrain_names::GRASS ||
+                                            terrain == terrain_names::DESERT) {
                                             passable = true;
                                         }
                                     }

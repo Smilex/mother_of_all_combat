@@ -50,9 +50,9 @@ struct v2 {
 
 enum terrain_names {
     FOG = 0,
-    GROUND,
+    GRASS,
     WATER,
-    HILLS
+    DESERT
 };
 
 enum class entity_types {

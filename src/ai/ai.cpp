@@ -12,7 +12,7 @@ struct ai_context {
 
     struct {
         u32 width, height;
-        client_terrain_names *terrain;
+        terrain_names *terrain;
 
         struct {
             v2<u32> *positions;
@@ -32,7 +32,7 @@ void ai_initialize_map(ai_context *ctx, memory_arena *mem, u32 width, u32 height
     ctx->map.width = width;
     ctx->map.height = height;
 
-    ctx->map.terrain = (client_terrain_names *)memory_arena_use(mem, sizeof(*ctx->map.terrain)
+    ctx->map.terrain = (terrain_names *)memory_arena_use(mem, sizeof(*ctx->map.terrain)
                                                                     * ctx->map.width
                                                                     * ctx->map.height
                                                                 );
@@ -116,8 +116,8 @@ void ai_update(memory_arena *mem, communication *comm) {
                         for (u32 i = 0; i < discover_body->num; ++i) {
                             comm_server_discover_body_tile *tile = (comm_server_discover_body_tile *)(ctx->read_buffer.base + buf_it);
                             buf_it += sizeof(*tile);
-                            ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] = terrain_names_to_client_terrain_names(tile->name);
-                    }
+                            ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] =tile->name;
+                        }
                     }
                 } else if (header->name == comm_server_msg_names::DISCOVER_TOWN) {
                     comm_server_discover_town_body *discover_town_body;

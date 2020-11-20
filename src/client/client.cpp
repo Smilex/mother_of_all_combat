@@ -1,8 +1,32 @@
 enum class client_terrain_names {
     FOG = 0,
-    GROUND,
+    FOG_TOP_GRASS,
+    FOG_TOP_LEFT_GRASS,
+    FOG_TOP_RIGHT_GRASS,
+    FOG_LEFT_GRASS,
+    FOG_RIGHT_GRASS,
+    FOG_BOTTOM_GRASS,
+    FOG_BOTTOM_LEFT_GRASS,
+    FOG_BOTTOM_RIGHT_GRASS,
+    FOG_TOP_WATER,
+    FOG_TOP_LEFT_WATER,
+    FOG_TOP_RIGHT_WATER,
+    FOG_LEFT_WATER,
+    FOG_RIGHT_WATER,
+    FOG_BOTTOM_WATER,
+    FOG_BOTTOM_LEFT_WATER,
+    FOG_BOTTOM_RIGHT_WATER,
+    FOG_TOP_DESERT,
+    FOG_TOP_LEFT_DESERT,
+    FOG_TOP_RIGHT_DESERT,
+    FOG_LEFT_DESERT,
+    FOG_RIGHT_DESERT,
+    FOG_BOTTOM_DESERT,
+    FOG_BOTTOM_LEFT_DESERT,
+    FOG_BOTTOM_RIGHT_DESERT,
+    GRASS,
     WATER,
-    HILLS
+    DESERT
 };
 
 enum client_screen_names {
@@ -19,12 +43,15 @@ struct client_context {
 
     Music background_music;
 
+    Texture2D terrain_tex;
+
     u32 my_server_id;
     bool my_turn;
 
     struct {
         u32 width, height;
-        client_terrain_names *terrain;
+        terrain_names *terrain;
+        client_terrain_names *client_terrain;
         doubly_linked_list<entity *> entities;
     } map;
 
@@ -92,7 +119,7 @@ u32 get_neighbors_for_caravan(client_context *ctx, v2<u32> pt, memory_arena *mem
 
             bool passable = true;
             u32 idx = Y * ctx->map.width + X;
-            if (ctx->map.terrain[idx] == client_terrain_names::HILLS) {
+            if (ctx->map.terrain[idx] == terrain_names::WATER) {
                 passable = false;
             }
 
@@ -180,25 +207,147 @@ Vector2 v2_to_Vector2(v2<T> v) {
     return rv;
 }
 
-client_terrain_names terrain_names_to_client_terrain_names(terrain_names name) {
-    if (name == terrain_names::FOG)
-        return client_terrain_names::FOG;
-    else if (name == terrain_names::GROUND)
-        return client_terrain_names::GROUND;
-    else if (name == terrain_names::WATER)
-        return client_terrain_names::WATER;
-    else if (name == terrain_names::HILLS)
-        return client_terrain_names::HILLS;
-}
-
 void initialize_map(client_context *ctx, memory_arena *mem, u32 width, u32 height) {
     ctx->map.width = width;
     ctx->map.height = height;
 
-    ctx->map.terrain = (client_terrain_names *)memory_arena_use(mem, sizeof(*ctx->map.terrain)
+    ctx->map.terrain = (terrain_names *)memory_arena_use(mem, sizeof(*ctx->map.terrain)
                                                                     * ctx->map.width
                                                                     * ctx->map.height
                                                                 );
+    ctx->map.client_terrain = (client_terrain_names *)memory_arena_use(mem, sizeof(*ctx->map.client_terrain)
+                                                                    * ctx->map.width
+                                                                    * ctx->map.height
+                                                                );
+}
+
+void update_client_map(client_context *ctx) {
+    for (u32 y = 0; y < ctx->map.height; ++y) {
+        for (u32 x = 0; x < ctx->map.width; ++x) {
+            bool fog_top = false;
+            bool fog_left = false;
+            bool fog_right = false;
+            bool fog_bottom = false;
+            if (y == 0) {
+                fog_top = true;
+            } else {
+                u32 idx_top = ctx->map.width * (y - 1) + x;
+                terrain_names name_top = ctx->map.terrain[idx_top];
+                if (name_top == terrain_names::FOG) {
+                    fog_top = true;
+                }
+            }
+
+            if (y == ctx->map.height - 1) {
+                fog_bottom = true;
+            } else {
+                u32 idx_bottom = ctx->map.width * (y + 1) + x;
+                terrain_names name_bottom = ctx->map.terrain[idx_bottom];
+                if (name_bottom == terrain_names::FOG) {
+                    fog_bottom = true;
+                }
+            }
+
+            if (x == 0) {
+                fog_left = true;
+            } else {
+                u32 idx_left = ctx->map.width * y + (x - 1);
+                terrain_names name_left = ctx->map.terrain[idx_left];
+                if (name_left == terrain_names::FOG) {
+                    fog_left = true;
+                }
+            }
+
+            if (x == ctx->map.width - 1) {
+                fog_right = true;
+            } else {
+                u32 idx_right = ctx->map.width * y + (x + 1);
+                terrain_names name_right = ctx->map.terrain[idx_right];
+                if (name_right == terrain_names::FOG) {
+                    fog_right = true;
+                }
+            }
+
+            client_terrain_names name = client_terrain_names::FOG;
+            u32 idx = ctx->map.width * y + x;
+            if (ctx->map.terrain[idx] == terrain_names::GRASS) {
+                if (fog_top) {
+                    if (fog_left) {
+                        name = client_terrain_names::FOG_TOP_LEFT_GRASS;
+                    } else if (fog_right) {
+                        name = client_terrain_names::FOG_TOP_RIGHT_GRASS;
+                    } else {
+                        name = client_terrain_names::FOG_TOP_GRASS;
+                    }
+                } else if (fog_bottom) {
+                    if (fog_left) {
+                        name = client_terrain_names::FOG_BOTTOM_LEFT_GRASS;
+                    } else if (fog_right) {
+                        name = client_terrain_names::FOG_BOTTOM_RIGHT_GRASS;
+                    } else {
+                        name = client_terrain_names::FOG_BOTTOM_GRASS;
+                    }
+                } else if (fog_left) {
+                    name = client_terrain_names::FOG_LEFT_GRASS;
+                } else if (fog_right) {
+                    name = client_terrain_names::FOG_RIGHT_GRASS;
+                } else {
+                    name = client_terrain_names::GRASS;
+                }
+
+            } else if (ctx->map.terrain[idx] == terrain_names::WATER) {
+                if (fog_top) {
+                    if (fog_left) {
+                        name = client_terrain_names::FOG_TOP_LEFT_WATER;
+                    } else if (fog_right) {
+                        name = client_terrain_names::FOG_TOP_RIGHT_WATER;
+                    } else {
+                        name = client_terrain_names::FOG_TOP_WATER;
+                    }
+                } else if (fog_bottom) {
+                    if (fog_left) {
+                        name = client_terrain_names::FOG_BOTTOM_LEFT_WATER;
+                    } else if (fog_right) {
+                        name = client_terrain_names::FOG_BOTTOM_RIGHT_WATER;
+                    } else {
+                        name = client_terrain_names::FOG_BOTTOM_WATER;
+                    }
+                } else if (fog_left) {
+                    name = client_terrain_names::FOG_LEFT_WATER;
+                } else if (fog_right) {
+                    name = client_terrain_names::FOG_RIGHT_WATER;
+                } else {
+                    name = client_terrain_names::WATER;
+                }
+            } else if (ctx->map.terrain[idx] == terrain_names::DESERT) {
+                if (fog_top) {
+                    if (fog_left) {
+                        name = client_terrain_names::FOG_TOP_LEFT_DESERT;
+                    } else if (fog_right) {
+                        name = client_terrain_names::FOG_TOP_RIGHT_DESERT;
+                    } else {
+                        name = client_terrain_names::FOG_TOP_DESERT;
+                    }
+                } else if (fog_bottom) {
+                    if (fog_left) {
+                        name = client_terrain_names::FOG_BOTTOM_LEFT_DESERT;
+                    } else if (fog_right) {
+                        name = client_terrain_names::FOG_BOTTOM_RIGHT_DESERT;
+                    } else {
+                        name = client_terrain_names::FOG_BOTTOM_DESERT;
+                    }
+                } else if (fog_left) {
+                    name = client_terrain_names::FOG_LEFT_DESERT;
+                } else if (fog_right) {
+                    name = client_terrain_names::FOG_RIGHT_DESERT;
+                } else {
+                    name = client_terrain_names::DESERT;
+                }
+            }
+
+            ctx->map.client_terrain[idx] = name;
+        }
+    }
 }
 
 void draw_map(client_context *ctx) {
@@ -227,14 +376,69 @@ void draw_map(client_context *ctx) {
     for (u32 y = ctx->camera.y; y < ctx->camera.y + lesser_y; ++y) {
         for (u32 x = ctx->camera.x; x < ctx->camera.x + lesser_x; ++x) {
             u32 it = y * ctx->map.width + x;
-            if (ctx->map.terrain[it] == client_terrain_names::FOG)
-                DrawRectangle(X, Y, tile_width, tile_height, BLACK);
-            else if (ctx->map.terrain[it] == client_terrain_names::GROUND)
-                DrawRectangle(X, Y, tile_width, tile_height, CLITERAL(Color){101, 252, 96, 255});
-            else if (ctx->map.terrain[it] == client_terrain_names::WATER)
-                DrawRectangle(X, Y, tile_width, tile_height, CLITERAL(Color){255, 241, 171, 255});
-            else if (ctx->map.terrain[it] == client_terrain_names::HILLS)
-                DrawRectangle(X, Y, tile_width, tile_height, BLUE);
+            Vector2 position;
+            position.x = X;
+            position.y = Y;
+            Color tint = WHITE;
+            Rectangle rect;
+            if (ctx->map.client_terrain[it] == client_terrain_names::FOG)
+                rect = CLITERAL(Rectangle){0, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_GRASS)
+                rect = CLITERAL(Rectangle){32 * 4, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_LEFT_GRASS)
+                rect = CLITERAL(Rectangle){32 * 8, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_RIGHT_GRASS)
+                rect = CLITERAL(Rectangle){32 * 9, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_LEFT_GRASS)
+                rect = CLITERAL(Rectangle){32 * 5, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_RIGHT_GRASS)
+                rect = CLITERAL(Rectangle){32 * 6, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_GRASS)
+                rect = CLITERAL(Rectangle){32 * 7, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_LEFT_GRASS)
+                rect = CLITERAL(Rectangle){32 * 10, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_RIGHT_GRASS)
+                rect = CLITERAL(Rectangle){32 * 11, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::GRASS)
+                rect = CLITERAL(Rectangle){32 * 2, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_WATER)
+                rect = CLITERAL(Rectangle){32 * 0, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_LEFT_WATER)
+                rect = CLITERAL(Rectangle){32 * 4, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_RIGHT_WATER)
+                rect = CLITERAL(Rectangle){32 * 5, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_LEFT_WATER)
+                rect = CLITERAL(Rectangle){32 * 1, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_RIGHT_WATER)
+                rect = CLITERAL(Rectangle){32 * 2, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_WATER)
+                rect = CLITERAL(Rectangle){32 * 3, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_LEFT_WATER)
+                rect = CLITERAL(Rectangle){32 * 6, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_RIGHT_WATER)
+                rect = CLITERAL(Rectangle){32 * 7, 32, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::WATER)
+                rect = CLITERAL(Rectangle){32 * 3, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::DESERT)
+                rect = CLITERAL(Rectangle){32 * 1, 0, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_DESERT)
+                rect = CLITERAL(Rectangle){32 * 0, 64, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_LEFT_DESERT)
+                rect = CLITERAL(Rectangle){32 * 4, 64, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_TOP_RIGHT_DESERT)
+                rect = CLITERAL(Rectangle){32 * 5, 64, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_LEFT_DESERT)
+                rect = CLITERAL(Rectangle){32 * 1, 64, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_RIGHT_DESERT)
+                rect = CLITERAL(Rectangle){32 * 2, 64, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_DESERT)
+                rect = CLITERAL(Rectangle){32 * 3, 64, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_LEFT_DESERT)
+                rect = CLITERAL(Rectangle){32 * 6, 64, 32, 32};
+            else if (ctx->map.client_terrain[it] == client_terrain_names::FOG_BOTTOM_RIGHT_DESERT)
+                rect = CLITERAL(Rectangle){32 * 7, 64, 32, 32};
+
+            DrawTextureRec(ctx->terrain_tex, rect, position, tint);
             X = X + tile_width;
         }
         X = 0;
@@ -350,6 +554,8 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
         ctx->background_music = LoadMusicStream("assets/trouble_with_tribals.mp3");
         SetMusicVolume(ctx->background_music, 0.03);
+
+        ctx->terrain_tex = LoadTexture("assets/terrain.png");
 
         ctx->is_init = true;
     }
@@ -503,9 +709,10 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             for (u32 i = 0; i < discover_body->num; ++i) {
                                 comm_server_discover_body_tile *tile = (comm_server_discover_body_tile *)(ctx->read_buffer.base + buf_it);
                                 buf_it += sizeof(*tile);
-                                ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] = terrain_names_to_client_terrain_names(tile->name);
+                                ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] = tile->name;
                             }
                         }
+                        update_client_map(ctx);
                     } else if (header->name == comm_server_msg_names::PING) {
                         comm_client_header client_header;
                         client_header.name = comm_client_msg_names::PONG;

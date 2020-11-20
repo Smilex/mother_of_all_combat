@@ -18,7 +18,7 @@ typedef CLIENT_UPDATE_AND_RENDER(client_update_and_render_t);
 #include "client/client.cpp"
 #include "ai/ai.cpp"
 
-#define NUM_AI 10
+#define NUM_AI 0
 
 memory_arena total_memory, server_memory, client_memory, ai_memory[NUM_AI];
 communication server_to_client_comm, client_to_server_comm, ai_to_server_comm[NUM_AI], server_to_ai_comm[NUM_AI];
