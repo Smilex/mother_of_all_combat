@@ -100,7 +100,18 @@ bool is_pt_in_gui(client_context *ctx, Vector2 pt) {
     return false;
 }
 
-u32 get_neighbors_for_caravan(client_context *ctx, v2<u32> pt, memory_arena *mem, v2<u32> **neighbors) {
+bool is_passable_for_unit(unit *u, terrain_names name) {
+    if (u->name == unit_names::SOLDIER) {
+        if (name == terrain_names::DESERT) return false;
+        if (name == terrain_names::WATER) return false;
+    } else if (u->name == unit_names::CARAVAN) {
+        if (name == terrain_names::WATER) return false;
+    }
+
+    return true;
+}
+
+u32 get_neighbors_for_unit(client_context *ctx, unit *u, v2<u32> pt, memory_arena *mem, v2<u32> **neighbors) {
     u32 rv = 0;
     v2<s32> d;
     d.x = -1;
@@ -117,11 +128,9 @@ u32 get_neighbors_for_caravan(client_context *ctx, v2<u32> pt, memory_arena *mem
             if ((s32)pt.x == X && (s32)pt.y == Y)
                 continue;
 
-            bool passable = true;
             u32 idx = Y * ctx->map.width + X;
-            if (ctx->map.terrain[idx] == terrain_names::WATER) {
-                passable = false;
-            }
+            terrain_names name = ctx->map.terrain[idx];
+            bool passable = is_passable_for_unit(u, name);
 
             if (passable) {
                 v2<u32> *n = (v2<u32> *)memory_arena_use(mem, sizeof(*n));
@@ -135,11 +144,11 @@ u32 get_neighbors_for_caravan(client_context *ctx, v2<u32> pt, memory_arena *mem
     return rv;
 }
 
-u32 get_path_for_caravan(client_context *ctx, v2<u32> start, v2<u32> goal, memory_arena *mem, v2<u32> **paths) {
+u32 get_path_for_unit(client_context *ctx, unit *u, v2<u32> goal, memory_arena *mem, v2<u32> **paths) {
     auto frontier = priority_queue<v2<u32>>();
-    frontier.push(start, 0);
+    frontier.push(u->position, 0);
     auto came_from = dictionary<v2<u32>, v2<u32>>();
-    came_from.push(start, start);
+    came_from.push(u->position, u->position);
     auto heuristic = [](v2<u32> a, v2<u32> b) {
         s32 dx = abs((s32)a.x - (s32)b.x);
         s32 dy = abs((s32)a.y - (s32)b.y);
@@ -158,13 +167,13 @@ u32 get_path_for_caravan(client_context *ctx, v2<u32> start, v2<u32> goal, memor
         }
 
         v2<u32> *neighbors;
-        u32 num_neighbors = get_neighbors_for_caravan(ctx, current, mem, &neighbors);
+        u32 num_neighbors = get_neighbors_for_unit(ctx, u, current, mem, &neighbors);
         for (u32 i = 0; i < num_neighbors; ++i) {
             v2<u32> *from = came_from.get(neighbors[i]);
             if (!from) {
                 v2<s32> s, e, d;
-                s.x = (s32)start.x;
-                s.y = (s32)start.y;
+                s.x = (s32)u->position.x;
+                s.y = (s32)u->position.y;
                 e.x = (s32)neighbors[i].x;
                 e.y = (s32)neighbors[i].y;
                 d = e - s;
@@ -180,7 +189,7 @@ u32 get_path_for_caravan(client_context *ctx, v2<u32> start, v2<u32> goal, memor
     *paths = (v2<u32> *)(mem->base + mem->used);
     u32 paths_used = 0;
     v2<u32> current = goal;
-    while (current != start) {
+    while (current != u->position) {
         (*paths)[paths_used++] = current;
 
         v2<u32> *from = came_from.get(current);
@@ -638,39 +647,23 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                     if (ctx->selected_entity != NULL) {
                         if (ctx->selected_entity->type == entity_types::UNIT) {
                             auto u = (unit *)ctx->selected_entity;
-                            if (u->name == unit_names::SOLDIER) {
-                                v2<u32> selected_pos = u->position;
+                            v2<u32> prev_path = u->position;
+                            v2<u32> *paths;
+                            u32 num_paths = get_path_for_unit(ctx, u, mouse_tile_pos, &ctx->temp_mem, &paths);
+
+                            for (u32 i = 0; i < num_paths; ++i) {
+                                comm_client_header header;
+                                header.name = comm_client_msg_names::MOVE_UNIT;
+                                comm_write(comm, &header, sizeof(header));
+                                comm_client_move_unit_body body;
+                                body.unit_id = u->server_id;
                                 v2<s32> d;
-                                d.x = (s32)mouse_tile_pos.x - (s32)selected_pos.x;
-                                d.y = (s32)mouse_tile_pos.y - (s32)selected_pos.y;
-                                if ((d.x >= -1 && d.x <= 1) && (d.y >= -1 && d.y <= 1)) {
-                                    comm_client_header header;
-                                    header.name = comm_client_msg_names::MOVE_UNIT;
-                                    comm_write(comm, &header, sizeof(header));
-                                    comm_client_move_unit_body body;
-                                    body.unit_id = u->server_id;
-                                    body.delta = d;
-                                    comm_write(comm, &body, sizeof(body));
-                                }
-                            } else if (u->name == unit_names::CARAVAN) {
-                                v2<u32> prev_path = u->position;
-                                v2<u32> *paths;
-                                u32 num_paths = get_path_for_caravan(ctx, prev_path, mouse_tile_pos, &ctx->temp_mem, &paths);
+                                d.x = (s32)paths[i].x - (s32)prev_path.x;
+                                d.y = (s32)paths[i].y - (s32)prev_path.y;
+                                body.delta = d;
+                                comm_write(comm, &body, sizeof(body));
 
-                                for (u32 i = 0; i < num_paths; ++i) {
-                                    comm_client_header header;
-                                    header.name = comm_client_msg_names::MOVE_UNIT;
-                                    comm_write(comm, &header, sizeof(header));
-                                    comm_client_move_unit_body body;
-                                    body.unit_id = u->server_id;
-                                    v2<s32> d;
-                                    d.x = (s32)paths[i].x - (s32)prev_path.x;
-                                    d.y = (s32)paths[i].y - (s32)prev_path.y;
-                                    body.delta = d;
-                                    comm_write(comm, &body, sizeof(body));
-
-                                    prev_path = paths[i];
-                                }
+                                prev_path = paths[i];
                             }
                         }
                     }
