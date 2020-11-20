@@ -359,6 +359,55 @@ void update_client_map(client_context *ctx) {
     }
 }
 
+void draw_entity(client_context *ctx, entity *ent) {
+    real32 X = 0, Y = 0;
+    u32 tile_width = 32;
+    u32 tile_height = 32;
+
+    v2<u32> pos = ent->position;
+    X = pos.x * tile_width;
+    Y = pos.y * tile_height;
+    X -= ctx->camera.x * tile_width;
+    Y -= ctx->camera.y * tile_height;
+
+    Color color;
+    if (ent->owner == -1) {
+        color = GRAY;
+    } else {
+        color = ctx->clients.colors[ent->owner];
+    }
+    if (ent->type == entity_types::STRUCTURE) {
+        DrawCircle(X + tile_width / 2, Y + tile_width / 2, tile_width / 2, color);
+
+        if (ctx->selected_entity == ent) {
+            DrawRectangleLines(X, Y, tile_width, tile_height, RED);
+        }
+    } else if (ent->type == entity_types::UNIT) {
+        auto u = (unit *)ent;
+        if (u->name == unit_names::SOLDIER) {
+            Vector2 bottom_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height};
+            Vector2 top_middle = CLITERAL(Vector2){.x = X + tile_width / 2, .y = Y};
+            Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
+            DrawTriangle(bottom_left, bottom_right, top_middle, color);
+        } else if (u->name == unit_names::CARAVAN) {
+            Vector2 mid_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height / 2};
+            Vector2 top_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y};
+            Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
+            DrawTriangle(mid_left, bottom_right, top_right, color);
+
+            color = BLACK;
+            if (ctx->selected_entity == ent) {
+                color = RED;
+            }
+            DrawTriangleLines(mid_left, bottom_right,
+                                top_right, color);
+        }
+        char num_buf[3 + 1];
+        snprintf(num_buf, 3 + 1, "%u", u->action_points);
+        DrawText(num_buf, X, Y, 16, WHITE);
+    }
+}
+
 void draw_map(client_context *ctx) {
     real32 scr_width = GetScreenWidth();
     real32 scr_height = GetScreenHeight();
@@ -473,57 +522,18 @@ void draw_map(client_context *ctx) {
     auto ent_iter = ctx->map.entities.first;
     while (ent_iter) {
         auto ent = ent_iter->payload;
-        v2<u32> pos = ent->position;
-        X = pos.x * tile_width;
-        Y = pos.y * tile_height;
-        X -= ctx->camera.x * tile_width;
-        Y -= ctx->camera.y * tile_height;
-
-        Color color;
-        if (ent->owner == -1) {
-            color = GRAY;
-        } else {
-            color = ctx->clients.colors[ent->owner];
+        if (ctx->selected_entity == ent) {
+            ent_iter = ent_iter->next;
+            continue;
         }
-        if (ent->type == entity_types::STRUCTURE) {
-            DrawCircle(X + tile_width / 2, Y + tile_width / 2, tile_width / 2, color);
 
-            if (ctx->selected_entity == ent) {
-                DrawRectangleLines(X, Y, tile_width, tile_height, RED);
-            }
-        } else if (ent->type == entity_types::UNIT) {
-            auto u = (unit *)ent;
-            if (u->name == unit_names::SOLDIER) {
-                Vector2 bottom_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height};
-                Vector2 top_middle = CLITERAL(Vector2){.x = X + tile_width / 2, .y = Y};
-                Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
-                DrawTriangle(bottom_left, bottom_right, top_middle, color);
-
-                color = BLACK;
-                if (ctx->selected_entity == ent) {
-                    color = RED;
-                }
-                DrawTriangleLines(bottom_left, bottom_right,
-                                    top_middle, color);
-            } else if (u->name == unit_names::CARAVAN) {
-                Vector2 mid_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height / 2};
-                Vector2 top_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y};
-                Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
-                DrawTriangle(mid_left, bottom_right, top_right, color);
-
-                color = BLACK;
-                if (ctx->selected_entity == ent) {
-                    color = RED;
-                }
-                DrawTriangleLines(mid_left, bottom_right,
-                                    top_right, color);
-            }
-            char num_buf[3 + 1];
-            snprintf(num_buf, 3 + 1, "%u", u->action_points);
-            DrawText(num_buf, X, Y, 16, WHITE);
-        }
+        draw_entity(ctx, ent);
 
         ent_iter = ent_iter->next;
+    }
+
+    if (ctx->selected_entity) {
+        draw_entity(ctx, ctx->selected_entity);
     }
 }
 
@@ -668,20 +678,25 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         }
                     }
                 } else if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-                    bool found = false;
-                    auto ent_iter = ctx->map.entities.first;
-                    while (ent_iter) {
-                        auto ent = ent_iter->payload;
-                        if (mouse_tile_pos.x == ent->position.x &&
-                            mouse_tile_pos.y == ent->position.y) {
-                            ctx->selected_entity = ent;
-                            found = true;
-                            break;
+                    u32 num_entities;
+                    entity **entities = find_entities_at_position(ctx->map.entities, mouse_tile_pos, &ctx->temp_mem, &num_entities);
+                    if (num_entities > 0) {
+                        bool found = false;
+                        for (u32 i = 0; i < num_entities; ++i) {
+                            if (entities[i] == ctx->selected_entity) {
+                                found = true;
+                                if (i == num_entities - 1) {
+                                    ctx->selected_entity = entities[0];
+                                } else {
+                                    ctx->selected_entity = entities[i + 1];
+                                }
+                                break;
+                            }
                         }
-
-                        ent_iter = ent_iter->next;
-                    }
-                    if (!found) {
+                        if (!found) {
+                            ctx->selected_entity = entities[0];
+                        }
+                    } else {
                         ctx->selected_entity = NULL;
                     }
                 }

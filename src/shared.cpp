@@ -458,3 +458,22 @@ find_entity_by_server_id(doubly_linked_list<entity *> entities, u32 id) {
 
     return NULL;
 }
+
+entity **
+find_entities_at_position(doubly_linked_list<entity *> entities, v2<u32> pos, memory_arena *mem, u32 *num_entities) {
+    entity **rv = (entity **)(mem->base + mem->used);
+    auto iter = entities.first;
+
+    *num_entities = 0;
+    while (iter) {
+        auto ent = iter->payload;
+        if (ent->position == pos) {
+            memory_arena_use(mem, sizeof(*rv));
+            rv[*num_entities] = ent;
+            *num_entities = (*num_entities) + 1;
+        }
+        iter = iter->next;
+    }
+
+    return rv;
+}
