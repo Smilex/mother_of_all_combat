@@ -74,6 +74,7 @@ struct client_context {
         } town;
         struct {
             Rectangle rect;
+            s32 player;
         } admin;
         struct {
             Rectangle rect;
@@ -590,6 +591,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         if (len - buf_it >= sizeof(*init_map_body)) {
                             init_map_body = (comm_server_init_map_body *)(ctx->read_buffer.base + buf_it);
                             ctx->my_server_id = init_map_body->your_id;
+                            ctx->clients.used = init_map_body->num_clients;
                             initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
                             ctx->current_screen = client_screen_names::GAME;
                             sitrep(SITREP_DEBUG, "INIT_EVERYBODY");
@@ -800,7 +802,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             u->position = add_unit_body->position;
                             u->name = add_unit_body->unit_name;
                             u->action_points = add_unit_body->action_points;
-                            u->owner = ctx->my_server_id;
+                            u->owner = add_unit_body->owner;
                         }
                     } else if (header->name == comm_server_msg_names::MOVE_UNIT) {
                         comm_server_move_unit_body *move_unit_body;
@@ -896,13 +898,37 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
             Rectangle admin_window = ctx->gui.admin.rect;
             GuiWindowBox(admin_window, "Admin");
-                if (GuiButton(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + 30, admin_window.width - 20, 20}, "DISCOVER")) {
+            {
+                real32 Y = 30;
+                if (GuiButton(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + Y, admin_window.width - 20, 20}, "DISCOVER")) {
                     comm_client_header header;
                     header.name = comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP;
 
                     comm_write(comm, &header, sizeof(header));
                 }
+                Y += 20 + 10;
+                char buf[256];
+                snprintf(buf, 256, "Your server id is: %d", ctx->my_server_id);
+                GuiLabel(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + Y, admin_window.width - 20, 20}, buf);
+                Y += 20 + 10;
+                GuiSpinner(CLITERAL(Rectangle){admin_window.x + 50, admin_window.y + Y, admin_window.width - 10 - 50, 20}, "PLAYER",
+                            &ctx->gui.admin.player, 0, ctx->clients.used - 1, false);
+                Y += 20 + 10;
+                if (GuiButton(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + Y, admin_window.width - 20, 20}, "ADD SOLDIER")) {
+                    comm_client_header header;
+                    header.name = comm_client_msg_names::ADMIN_ADD_UNIT;
 
+                    comm_write(comm, &header, sizeof(header));
+
+                    comm_client_admin_add_unit_body body;
+                    body.name = unit_names::SOLDIER;
+                    body.owner_id = ctx->gui.admin.player;
+                    body.position.x = ctx->camera.x;
+                    body.position.y = ctx->camera.y;
+
+                    comm_write(comm, &body, sizeof(body));
+                } 
+            }
             if (!ctx->my_turn) {
                 Rectangle window = CLITERAL(Rectangle){scr_width / 2 - 150, scr_height / 2 - 30, 300, 60};
                 GuiWindowBox(window, "Status");
