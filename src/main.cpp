@@ -18,7 +18,7 @@ typedef CLIENT_UPDATE_AND_RENDER(client_update_and_render_t);
 #include "client/client.cpp"
 #include "ai/ai.cpp"
 
-#define NUM_AI 0
+#define NUM_AI 1
 
 memory_arena total_memory, server_memory, client_memory, ai_memory[NUM_AI];
 communication server_to_client_comm, client_to_server_comm, ai_to_server_comm[NUM_AI], server_to_ai_comm[NUM_AI];
@@ -127,8 +127,10 @@ int main(int argc, char *argv[]) {
         server_update(&server_memory, server_comms, 1 + NUM_AI);
 
         client_update_and_render_ptr(&client_memory, &client_to_server_comm);
+#if 0
         for (u32 i = 0; i < NUM_AI; ++i)
             ai_update(&ai_memory[i], &ai_to_server_comm[i]);
+#endif
     }
 
     CloseWindow();

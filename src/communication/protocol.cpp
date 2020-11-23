@@ -189,6 +189,7 @@ enum class comm_client_msg_names {
     START,
     PONG,
     ADMIN_DISCOVER_ENTIRE_MAP,
+    ADMIN_ADD_UNIT,
     END_TURN,
     SET_CONSTRUCTION,
     MOVE_UNIT,
@@ -205,6 +206,7 @@ struct comm_server_header {
 
 struct comm_server_init_map_body {
     u32 your_id;
+    u32 num_clients;
     u32 width, height;
 };
 
@@ -236,6 +238,7 @@ struct comm_client_set_construction_body {
 
 struct comm_server_add_unit_body {
     u32 unit_id;
+    u32 owner;
     u32 action_points;
     unit_names unit_name;
     v2<u32> position;
@@ -267,4 +270,10 @@ struct comm_server_load_unit_body {
         unit_to_load;
     u32 action_points_left;
     v2<u32> new_position;
+};
+
+struct comm_client_admin_add_unit_body {
+    unit_names name;
+    u32 owner_id;
+    v2<u32> position;
 };

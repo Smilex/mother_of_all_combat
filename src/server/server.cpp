@@ -63,6 +63,7 @@ void add_unit(communication *comm, server_context *ctx, v2<u32> pos, unit_names 
     add_unit_body.action_points = u->action_points;
     add_unit_body.position = u->position;
     add_unit_body.unit_name = u->name;
+    add_unit_body.owner = u->owner;
     comm_write(comm, &add_unit_body, sizeof(add_unit_body));
 }
 
@@ -523,6 +524,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
             comm_write(comm, &header, sizeof(header));
             
             comm_server_init_map_body init_map_body;
+            init_map_body.num_clients = ctx->clients.used;
             init_map_body.your_id = i;
             init_map_body.width = ctx->map.terrain_width;
             init_map_body.height = ctx->map.terrain_height;
@@ -576,6 +578,14 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                     } else if (header->name == comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP) {
                         if (ctx->clients.admins[i]) {
                             send_entire_map(comm, ctx);
+                        }
+                    } else if (header->name == comm_client_msg_names::ADMIN_ADD_UNIT) {
+                        if (ctx->clients.admins[i]) {
+                            comm_client_admin_add_unit_body *body =
+                                (comm_client_admin_add_unit_body *)(ctx->read_buffer.base + read_it);
+                            read_it += sizeof(*body);
+
+                            add_unit(comm, ctx, body->position, body->name, body->owner_id, mem);
                         }
                     } else if (header->name == comm_client_msg_names::END_TURN) {
                         if ((s32)i == ctx->current_turn_id) {
