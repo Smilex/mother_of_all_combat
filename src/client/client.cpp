@@ -393,27 +393,7 @@ void draw_entity(client_context *ctx, entity *ent) {
         } else if (u->name == unit_names::CARAVAN) {
             Rectangle src = ctx->clients.caravan_srcs[ent->owner];
             DrawTextureRec(ctx->entities_tex, src, CLITERAL(Vector2){X, Y}, WHITE);
-#if 0
-            Vector2 mid_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height / 2};
-            Vector2 top_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y};
-            Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
-            DrawTriangle(mid_left, bottom_right, top_right, color);
-
-            color = BLACK;
-            if (ctx->selected_entity == ent) {
-                color = RED;
-            }
-            DrawTriangleLines(mid_left, bottom_right,
-                                top_right, color);
-#endif
         }
-        char num_buf[3 + 1];
-        snprintf(num_buf, 3 + 1, "%u", u->action_points);
-        DrawText(num_buf, X, Y, 16, WHITE);
-    }
-
-    if (ctx->selected_entity == ent) {
-        DrawRectangleLines(X, Y, tile_width, tile_height, RED);
     }
 }
 
@@ -529,16 +509,22 @@ void draw_map(client_context *ctx) {
     }
 
     auto ent_iter = ctx->map.entities.first;
+    auto prev_ent_iter = ent_iter;
+    while (ent_iter) {
+        prev_ent_iter = ent_iter;
+        ent_iter = ent_iter->next;
+    }
+    ent_iter = prev_ent_iter;
     while (ent_iter) {
         auto ent = ent_iter->payload;
         if (ctx->selected_entity == ent) {
-            ent_iter = ent_iter->next;
+            ent_iter = ent_iter->prev;
             continue;
         }
 
         draw_entity(ctx, ent);
 
-        ent_iter = ent_iter->next;
+        ent_iter = ent_iter->prev;
     }
 
     if (ctx->selected_entity) {
@@ -901,6 +887,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
 
                             unit *u = (unit *)memory_arena_use(mem, sizeof(*u));
                             ctx->map.entities.push_front(u);
+                            ctx->selected_entity = u;
                             u->type = entity_types::UNIT;
                             u->server_id = add_unit_body->unit_id;
                             u->position = add_unit_body->position;
