@@ -44,6 +44,7 @@ struct client_context {
     Music background_music;
 
     Texture2D terrain_tex;
+    Texture2D entities_tex;
 
     u32 my_server_id;
     bool my_turn;
@@ -57,6 +58,9 @@ struct client_context {
 
     struct {
         Color *colors;
+        Rectangle *town_srcs;
+        Rectangle *soldier_srcs;
+        Rectangle *caravan_srcs;
         u32 max, used;
     } clients;
 
@@ -378,19 +382,17 @@ void draw_entity(client_context *ctx, entity *ent) {
         color = ctx->clients.colors[ent->owner];
     }
     if (ent->type == entity_types::STRUCTURE) {
-        DrawCircle(X + tile_width / 2, Y + tile_width / 2, tile_width / 2, color);
-
-        if (ctx->selected_entity == ent) {
-            DrawRectangleLines(X, Y, tile_width, tile_height, RED);
-        }
+        Rectangle src = ctx->clients.town_srcs[ent->owner];
+        DrawTextureRec(ctx->entities_tex, src, CLITERAL(Vector2){X, Y}, WHITE);
     } else if (ent->type == entity_types::UNIT) {
         auto u = (unit *)ent;
         if (u->name == unit_names::SOLDIER) {
-            Vector2 bottom_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height};
-            Vector2 top_middle = CLITERAL(Vector2){.x = X + tile_width / 2, .y = Y};
-            Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
-            DrawTriangle(bottom_left, bottom_right, top_middle, color);
+            Rectangle src = ctx->clients.soldier_srcs[ent->owner];
+            DrawTextureRec(ctx->entities_tex, src, CLITERAL(Vector2){X, Y}, WHITE);
         } else if (u->name == unit_names::CARAVAN) {
+            Rectangle src = ctx->clients.caravan_srcs[ent->owner];
+            DrawTextureRec(ctx->entities_tex, src, CLITERAL(Vector2){X, Y}, WHITE);
+#if 0
             Vector2 mid_left = CLITERAL(Vector2){.x = X, .y = Y + tile_height / 2};
             Vector2 top_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y};
             Vector2 bottom_right = CLITERAL(Vector2){.x = X + tile_width, .y = Y + tile_height};
@@ -402,10 +404,15 @@ void draw_entity(client_context *ctx, entity *ent) {
             }
             DrawTriangleLines(mid_left, bottom_right,
                                 top_right, color);
+#endif
         }
         char num_buf[3 + 1];
         snprintf(num_buf, 3 + 1, "%u", u->action_points);
         DrawText(num_buf, X, Y, 16, WHITE);
+    }
+
+    if (ctx->selected_entity == ent) {
+        DrawRectangleLines(X, Y, tile_width, tile_height, RED);
     }
 }
 
@@ -551,12 +558,51 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
         ctx->clients.colors = (Color *)memory_arena_use(mem, sizeof(*ctx->clients.colors)
                                                         * ctx->clients.max
                                                         );
+        ctx->clients.town_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.town_srcs)
+                                                        * ctx->clients.max
+                                                        );
+        ctx->clients.soldier_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.soldier_srcs)
+                                                        * ctx->clients.max
+                                                        );
+        ctx->clients.caravan_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.caravan_srcs)
+                                                            * ctx->clients.max
+                                                            );
+
+        real32 X = 0, Y = 0;
+        real32 client_tex_width = 32 * ctx->clients.max;
+        real32 client_tex_height = 32 * 3;
+        Image full_img = GenImageColor(client_tex_width, client_tex_height, PINK);
+        Image entities_img = LoadImage("assets/entities.png");
         for (u32 i = 0; i < ctx->clients.max; ++i) {
             u8 red = rand() % 255;
             u8 green = rand() % 255;
             u8 blue = rand() % 255;
             ctx->clients.colors[i] = CLITERAL(Color){red, green, blue, 255};
+
+            Image entities_copy = ImageCopy(entities_img);
+            Color replace_color = CLITERAL(Color){0,0,0,0};
+            Color with_color = ctx->clients.colors[i];
+            ImageColorReplace(&entities_copy, replace_color, with_color);
+
+            Rectangle src = CLITERAL(Rectangle){0, 0, 32, 32};
+            Rectangle dst;
+            dst.x = X;
+            dst.y = Y;
+            dst.width = 32;
+            dst.height = 32 * 3;
+            ImageDraw(&full_img, entities_copy, src, dst, WHITE);
+            UnloadImage(entities_copy);
+
+            ctx->clients.town_srcs[i] = CLITERAL(Rectangle){X, 0, 32, 32};
+            ctx->clients.soldier_srcs[i] = CLITERAL(Rectangle){X, 32, 32, 32};
+            ctx->clients.caravan_srcs[i] = CLITERAL(Rectangle){X, 64, 32, 32};
+
+            X += 32;
         }
+        UnloadImage(entities_img);
+
+        ctx->entities_tex = LoadTextureFromImage(full_img);
+        UnloadImage(full_img);
 
         ctx->selected_entity = NULL;
 
@@ -576,6 +622,9 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
         SetMusicVolume(ctx->background_music, 0.03);
 
         ctx->terrain_tex = LoadTexture("assets/terrain.png");
+        {
+            
+        }
 
         ctx->is_init = true;
     }
