@@ -713,16 +713,40 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                             u32 num_paths = get_path_for_unit(ctx, u, mouse_tile_pos, &ctx->temp_mem, &paths);
 
                             for (u32 i = 0; i < num_paths; ++i) {
+                                u32 num_entities;
+                                entity **entities = find_entities_at_position(ctx->map.entities, paths[i], &ctx->temp_mem, &num_entities);
+
+                                unit *u_that_loads = NULL;
+                                if (u->name == unit_names::SOLDIER) {
+                                    for (u32 j = 0; j < num_entities; ++j) {
+                                        if (entities[j]->type == entity_types::UNIT) {
+                                            auto u = (unit *)(entities[j]);
+                                            if (u->name == unit_names::CARAVAN) {
+                                                u_that_loads = u;
+                                            }
+                                        }
+                                    }
+                                }
+
                                 comm_client_header header;
-                                header.name = comm_client_msg_names::MOVE_UNIT;
-                                comm_write(comm, &header, sizeof(header));
-                                comm_client_move_unit_body body;
-                                body.unit_id = u->server_id;
-                                v2<s32> d;
-                                d.x = (s32)paths[i].x - (s32)prev_path.x;
-                                d.y = (s32)paths[i].y - (s32)prev_path.y;
-                                body.delta = d;
-                                comm_write(comm, &body, sizeof(body));
+                                if (u_that_loads != NULL) {
+                                    header.name = comm_client_msg_names::LOAD_UNIT;
+                                    comm_write(comm, &header, sizeof(header));
+                                    comm_client_load_unit_body body;
+                                    body.unit_that_loads = u_that_loads->server_id; 
+                                    body.unit_to_load = u->server_id;
+                                    comm_write(comm, &body, sizeof(body));
+                                } else {
+                                    header.name = comm_client_msg_names::MOVE_UNIT;
+                                    comm_write(comm, &header, sizeof(header));
+                                    comm_client_move_unit_body body;
+                                    body.unit_id = u->server_id;
+                                    v2<s32> d;
+                                    d.x = (s32)paths[i].x - (s32)prev_path.x;
+                                    d.y = (s32)paths[i].y - (s32)prev_path.y;
+                                    body.delta = d;
+                                    comm_write(comm, &body, sizeof(body));
+                                }
 
                                 prev_path = paths[i];
                             }
@@ -906,8 +930,10 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                                 if (ent_that_loads->type == entity_types::UNIT &&
                                     ent_to_load->type == entity_types::UNIT) {
                                     auto u_to_load = (unit *)ent_to_load;
+                                    auto u_that_loads = (unit *)ent_that_loads;
                                     u_to_load->action_points = load_unit_body->action_points_left;
                                     u_to_load->position = load_unit_body->new_position;
+                                    u_that_loads->slot = u_to_load;
                                 }
                             }
                         }

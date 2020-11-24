@@ -46,7 +46,7 @@ void add_unit(communication *comm, server_context *ctx, v2<u32> pos, unit_names 
     u->position = pos;
     u->name = name;
     u->owner = owner;
-    u->slot = -1;
+    u->slot = NULL;
     u->type = entity_types::UNIT;
 
     if (name == unit_names::SOLDIER) {
@@ -730,10 +730,10 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 
                                         discover_3x3(comm, ctx, pos);
 
-                                        if (u->slot != -1) {
+                                        if (u->slot != NULL) {
                                             head.name = comm_server_msg_names::MOVE_UNIT;
-                                            b.unit_id = u->slot;
-                                            b.action_points_left = 1;
+                                            b.unit_id = u->slot->server_id;
+                                            b.action_points_left = u->slot->action_points;
                                             b.new_position = pos;
                                             comm_write(comm, &head, sizeof(head));
                                             comm_write(comm, &b, sizeof(b));
@@ -768,12 +768,12 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                     comm_write(comm, &head, sizeof(head));
                                     comm_server_load_unit_body b;
                                     b.unit_that_loads = unit_that_loads->server_id;
-                                    b.unit_to_load = u->server_id;;
+                                    b.unit_to_load = u->server_id;
                                     b.action_points_left = action_points;
                                     b.new_position = unit_that_loads->position;
                                     comm_write(comm, &b, sizeof(b));
 
-                                    unit_that_loads->slot = u->server_id;
+                                    unit_that_loads->slot = u;
                                 }
                             }
                         }
