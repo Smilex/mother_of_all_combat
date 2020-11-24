@@ -441,7 +441,7 @@ struct structure : public entity {
 struct unit : public entity {
     unit_names name;
     u32 action_points;
-    unit *slot;
+    unit *slot, *loaded_by;
 };
 
 entity *

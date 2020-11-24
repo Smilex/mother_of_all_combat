@@ -181,7 +181,8 @@ enum class comm_server_msg_names {
     ADD_UNIT,
     MOVE_UNIT,
     SET_UNIT_ACTION_POINTS,
-    LOAD_UNIT
+    LOAD_UNIT,
+    UNLOAD_UNIT
 };
 
 enum class comm_client_msg_names {
@@ -193,7 +194,8 @@ enum class comm_client_msg_names {
     END_TURN,
     SET_CONSTRUCTION,
     MOVE_UNIT,
-    LOAD_UNIT
+    LOAD_UNIT,
+    UNLOAD_UNIT
 };
 
 struct comm_client_header {
@@ -276,4 +278,15 @@ struct comm_client_admin_add_unit_body {
     unit_names name;
     u32 owner_id;
     v2<u32> position;
+};
+
+struct comm_client_unload_unit_body {
+    u32 unit_id;
+    v2<s32> delta;
+};
+
+struct comm_server_unload_unit_body {
+    u32 unit_id;
+    u32 action_points_left;
+    v2<u32> new_position;
 };

@@ -691,55 +691,57 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                 body->unit_id == ent->server_id) {
                                 auto u = (unit *)ent;
                                 v2<s32> d = body->delta;
+                                if (d.length() <= 1) {
+                                    u32 action_points = u->action_points;
+                                    if (action_points > 0) {
+                                        action_points--;
 
-                                u32 action_points = u->action_points;
-                                if (action_points > 0) {
-                                    action_points--;
+                                        v2<u32> pos = u->position;
+                                        pos.x += d.x;
+                                        pos.y += d.y;
 
-                                    v2<u32> pos = u->position;
-                                    pos.x += d.x;
-                                    pos.y += d.y;
-
-                                    u32 idx = pos.y * ctx->map.terrain_width + pos.x;
-                                    bool passable = false;
-                                    unit_names name = u->name;
-                                    terrain_names terrain = ctx->map.terrain[idx];
-                                    if (name == unit_names::SOLDIER) {
-                                        if (terrain == terrain_names::GRASS) {
-                                            passable = true;
+                                        u32 idx = pos.y * ctx->map.terrain_width + pos.x;
+                                        bool passable = false;
+                                        unit_names name = u->name;
+                                        terrain_names terrain = ctx->map.terrain[idx];
+                                        if (name == unit_names::SOLDIER) {
+                                            if (terrain == terrain_names::GRASS) {
+                                                passable = true;
+                                            }
+                                        } else if (name == unit_names::CARAVAN) {
+                                            if (terrain == terrain_names::GRASS ||
+                                                terrain == terrain_names::DESERT) {
+                                                passable = true;
+                                            }
                                         }
-                                    } else if (name == unit_names::CARAVAN) {
-                                        if (terrain == terrain_names::GRASS ||
-                                            terrain == terrain_names::DESERT) {
-                                            passable = true;
-                                        }
-                                    }
 
-                                    if (passable) {
-                                        u->action_points = action_points;
-                                        u->position = pos;
+                                        if (passable) {
+                                            u->action_points = action_points;
+                                            u->position = pos;
 
-                                        comm_server_header head;
-                                        head.name = comm_server_msg_names::MOVE_UNIT;
-                                        comm_server_move_unit_body b;
-                                        b.unit_id = u->server_id;
-                                        b.action_points_left = u->action_points;
-                                        b.new_position = pos;
-                                        comm_write(comm, &head, sizeof(head));
-                                        comm_write(comm, &b, sizeof(b));
-
-                                        discover_3x3(comm, ctx, pos);
-
-                                        if (u->slot != NULL) {
+                                            comm_server_header head;
                                             head.name = comm_server_msg_names::MOVE_UNIT;
-                                            b.unit_id = u->slot->server_id;
-                                            b.action_points_left = u->slot->action_points;
+                                            comm_server_move_unit_body b;
+                                            b.unit_id = u->server_id;
+                                            b.action_points_left = u->action_points;
                                             b.new_position = pos;
                                             comm_write(comm, &head, sizeof(head));
                                             comm_write(comm, &b, sizeof(b));
+
+                                            discover_3x3(comm, ctx, pos);
+
+                                            if (u->slot != NULL) {
+                                                u->slot->position = pos;
+                                                head.name = comm_server_msg_names::MOVE_UNIT;
+                                                b.unit_id = u->slot->server_id;
+                                                b.action_points_left = u->slot->action_points;
+                                                b.new_position = pos;
+                                                comm_write(comm, &head, sizeof(head));
+                                                comm_write(comm, &b, sizeof(b));
+                                            }
                                         }
+                                        break;
                                     }
-                                    break;
                                 }
                             }
                             ent_iter = ent_iter->next;
@@ -774,8 +776,71 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                     comm_write(comm, &b, sizeof(b));
 
                                     unit_that_loads->slot = u;
+                                    u->loaded_by = unit_that_loads;
                                 }
                             }
+                        }
+                    } else if (header->name == comm_client_msg_names::UNLOAD_UNIT) {
+                        comm_client_unload_unit_body *body =
+                            (comm_client_unload_unit_body *)(ctx->read_buffer.base + read_it);
+                        read_it += sizeof(*body);
+                        auto ent_iter = ctx->map.entities.first;
+                        while (ent_iter) {
+                            auto ent = ent_iter->payload;
+                            s32 owner = ent->owner;
+                            if (owner == i && ent->type == entity_types::UNIT &&
+                                body->unit_id == ent->server_id) {
+                                auto u = (unit *)ent;
+                                if (u->loaded_by) {
+                                    v2<s32> d = body->delta;
+                                    if (d.length() <= 1) {
+                                        u32 action_points = u->action_points;
+                                        if (action_points > 0) {
+                                            action_points--;
+
+                                            v2<u32> pos = u->position;
+                                            pos.x += d.x;
+                                            pos.y += d.y;
+
+                                            u32 idx = pos.y * ctx->map.terrain_width + pos.x;
+                                            bool passable = false;
+                                            unit_names name = u->name;
+                                            terrain_names terrain = ctx->map.terrain[idx];
+                                            if (name == unit_names::SOLDIER) {
+                                                if (terrain == terrain_names::GRASS) {
+                                                    passable = true;
+                                                }
+                                            } else if (name == unit_names::CARAVAN) {
+                                                if (terrain == terrain_names::GRASS ||
+                                                    terrain == terrain_names::DESERT) {
+                                                    passable = true;
+                                                }
+                                            }
+
+                                            if (passable) {
+                                                u->action_points = action_points;
+                                                u->position = pos;
+                                                u->loaded_by->slot = NULL;
+                                                u->loaded_by = NULL;
+
+                                                comm_server_header head;
+                                                head.name = comm_server_msg_names::UNLOAD_UNIT;
+                                                comm_server_unload_unit_body b;
+                                                b.unit_id = u->server_id;
+                                                b.action_points_left = u->action_points;
+                                                b.new_position = pos;
+                                                comm_write(comm, &head, sizeof(head));
+                                                comm_write(comm, &b, sizeof(b));
+
+                                                discover_3x3(comm, ctx, pos);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            ent_iter = ent_iter->next;
                         }
                     }
                 }
