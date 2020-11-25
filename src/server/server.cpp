@@ -17,7 +17,7 @@ struct server_context {
 
     memory_arena temp_buffer, read_buffer;
     server_state_names current_state;
-    s32 current_turn_id;
+    u32 current_turn_id;
 
     u32 ent_id_counter;
 
@@ -36,7 +36,7 @@ struct server_context {
     } clients;
 };
 
-void add_unit(communication *comm, server_context *ctx, v2<u32> pos, unit_names name, s32 owner, memory_arena *mem) {
+void add_unit(communication *comm, server_context *ctx, v2<u32> pos, unit_names name, u32 owner, memory_arena *mem) {
     comm_server_header header;
     header.name = comm_server_msg_names::ADD_UNIT;
     comm_write(comm, &header, sizeof(header));
@@ -379,7 +379,7 @@ void generate_map(server_context *ctx, memory_arena *mem) {
         ctx->map.entities.push_front(town);
         town->type = entity_types::STRUCTURE;
         town->position = pos;
-        town->owner = -1;
+        town->owner = 0;
         town->construction = unit_names::NONE;
         town->server_id = ctx->ent_id_counter++;
     }
@@ -391,7 +391,7 @@ void generate_map(server_context *ctx, memory_arena *mem) {
             entity **ent_iter = ctx->map.entities.get(town_id);
             if (ent_iter) {
                 auto ent = *ent_iter;
-                if (ent->owner == -1) {
+                if (ent->owner == 0) {
                     ent->owner = i;
                     break;
                 }
@@ -455,7 +455,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
         ctx->temp_buffer = memory_arena_child(mem, MB(80), "server_memory_temp");
         ctx->read_buffer = memory_arena_child(mem, MB(10), "server_memory_read");
 
-        ctx->clients.used = 0;
+        ctx->clients.used = 1;
         ctx->clients.max = 32;
         ctx->clients.comms = (communication *)memory_arena_use(mem,
                                                 sizeof(*ctx->clients.comms)
@@ -470,11 +470,11 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 * ctx->clients.max
                                                 );
 
-        for (u32 i = 0; i < num_comms; ++i) {
-            ctx->clients.comms[i] = comms[i];
+        for (u32 i = 1; i < num_comms; ++i) {
+            ctx->clients.comms[i] = comms[i - 1];
             ++ctx->clients.used;
         }
-        ctx->clients.admins[0] = true;
+        ctx->clients.admins[1] = true;
 
         ctx->map.terrain_width = MAP_GRID_WIDTH;
         ctx->map.terrain_height = MAP_GRID_HEIGHT;
@@ -487,13 +487,13 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 
         generate_map(ctx, mem);
 
-        ctx->current_turn_id = -1;
+        ctx->current_turn_id = 0;
         
         ctx->is_init = true;
     }
 
     if (ctx->current_state == server_state_names::AWAITING_CONNECTIONS) {
-        for (u32 i = 0; i < ctx->clients.used; ++i) {
+        for (u32 i = 1; i < ctx->clients.used; ++i) {
             comm_client_header *header;
             communication *comm = &ctx->clients.comms[i];
             s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
@@ -517,7 +517,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
             }
         }
     } else if (ctx->current_state == server_state_names::INIT_EVERYBODY) {
-        for (u32 i = 0; i < ctx->clients.used; ++i) {
+        for (u32 i = 1; i < ctx->clients.used; ++i) {
             comm_server_header header;
             communication *comm = &ctx->clients.comms[i];
             header.name = comm_server_msg_names::INIT_MAP;
@@ -555,7 +555,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                 ent_iter = ent_iter->next;
             }
 
-			if (i == 0) {
+			if (i == 1) {
                 ctx->current_turn_id = i;
                 header.name = comm_server_msg_names::YOUR_TURN;
                 comm_write(comm, &header, sizeof(header));
@@ -564,7 +564,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 
         ctx->current_state = server_state_names::LOOP;
     } else if (ctx->current_state == server_state_names::LOOP) {
-        for (u32 i = 0; i < ctx->clients.used; ++i) {
+        for (u32 i = 1; i < ctx->clients.used; ++i) {
             comm_client_header *header;
             communication *comm = &ctx->clients.comms[i];
             s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
@@ -844,7 +844,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
         }
     }
 
-    for (u32 i = 0; i < ctx->clients.used; ++i) {
+    for (u32 i = 1; i < ctx->clients.used; ++i) {
         if (ctx->clients.connecteds[i]) {
             communication *comm = &ctx->clients.comms[i];
             if (time_get_now_in_ms() - comm->last_sent_time > 300) {

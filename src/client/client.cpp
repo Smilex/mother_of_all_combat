@@ -376,12 +376,6 @@ void draw_entity(client_context *ctx, entity *ent) {
     X -= ctx->camera.x * tile_width;
     Y -= ctx->camera.y * tile_height;
 
-    Color color;
-    if (ent->owner == -1) {
-        color = GRAY;
-    } else {
-        color = ctx->clients.colors[ent->owner];
-    }
     if (ent->type == entity_types::STRUCTURE) {
         Rectangle src = ctx->clients.town_srcs[ent->owner];
         DrawTextureRec(ctx->entities_tex, src, CLITERAL(Vector2){X, Y}, WHITE);
@@ -540,7 +534,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
         ctx->read_buffer = memory_arena_child(mem, MB(50), "client_memory_read");
         ctx->temp_mem = memory_arena_child(mem, MB(20), "client_memory_temp");
 
-        ctx->clients.used = 0;
+        ctx->clients.used = 1;
         ctx->clients.max = 32;
         ctx->clients.colors = (Color *)memory_arena_use(mem, sizeof(*ctx->clients.colors)
                                                         * ctx->clients.max
@@ -555,20 +549,17 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                                                             * ctx->clients.max
                                                             );
 
-        real32 X = 0, Y = 0;
-        real32 client_tex_width = 32 * ctx->clients.max;
-        real32 client_tex_height = 32 * 3;
-        Image full_img = GenImageColor(client_tex_width, client_tex_height, PINK);
-        Image entities_img = LoadImage("assets/entities.png");
-        for (u32 i = 0; i < ctx->clients.max; ++i) {
-            u8 red = rand() % 255;
-            u8 green = rand() % 255;
-            u8 blue = rand() % 255;
-            ctx->clients.colors[i] = CLITERAL(Color){red, green, blue, 255};
+        {
+            u32 num_entities = 3;
+            real32 X = 0, Y = 0;
+            real32 client_tex_width = 32 * ctx->clients.max;
+            real32 client_tex_height = 32 * num_entities;
+            Image full_img = GenImageColor(client_tex_width, client_tex_height, PINK);
+            Image entities_img = LoadImage("assets/entities.png");
 
             Image entities_copy = ImageCopy(entities_img);
             Color replace_color = CLITERAL(Color){0,0,0,0};
-            Color with_color = ctx->clients.colors[i];
+            Color with_color = GRAY;
             ImageColorReplace(&entities_copy, replace_color, with_color);
 
             Rectangle src = CLITERAL(Rectangle){0, 0, 32, 32};
@@ -576,20 +567,46 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
             dst.x = X;
             dst.y = Y;
             dst.width = 32;
-            dst.height = 32 * 3;
+            dst.height = 32 * num_entities;
             ImageDraw(&full_img, entities_copy, src, dst, WHITE);
             UnloadImage(entities_copy);
 
-            ctx->clients.town_srcs[i] = CLITERAL(Rectangle){X, 0, 32, 32};
-            ctx->clients.soldier_srcs[i] = CLITERAL(Rectangle){X, 32, 32, 32};
-            ctx->clients.caravan_srcs[i] = CLITERAL(Rectangle){X, 64, 32, 32};
+            ctx->clients.town_srcs[0] = CLITERAL(Rectangle){X, 0, 32, 32};
+            ctx->clients.soldier_srcs[0] = CLITERAL(Rectangle){X, 32, 32, 32};
+            ctx->clients.caravan_srcs[0] = CLITERAL(Rectangle){X, 64, 32, 32};
 
             X += 32;
-        }
-        UnloadImage(entities_img);
+            for (u32 i = 1; i < ctx->clients.max; ++i) {
+                u8 red = rand() % 255;
+                u8 green = rand() % 255;
+                u8 blue = rand() % 255;
+                ctx->clients.colors[i] = CLITERAL(Color){red, green, blue, 255};
 
-        ctx->entities_tex = LoadTextureFromImage(full_img);
-        UnloadImage(full_img);
+                entities_copy = ImageCopy(entities_img);
+                replace_color = CLITERAL(Color){0,0,0,0};
+                with_color = ctx->clients.colors[i];
+                ImageColorReplace(&entities_copy, replace_color, with_color);
+
+                src = CLITERAL(Rectangle){0, 0, 32, 32};
+                dst;
+                dst.x = X;
+                dst.y = Y;
+                dst.width = 32;
+                dst.height = 32 * num_entities;
+                ImageDraw(&full_img, entities_copy, src, dst, WHITE);
+                UnloadImage(entities_copy);
+
+                ctx->clients.town_srcs[i] = CLITERAL(Rectangle){X, 0, 32, 32};
+                ctx->clients.soldier_srcs[i] = CLITERAL(Rectangle){X, 32, 32, 32};
+                ctx->clients.caravan_srcs[i] = CLITERAL(Rectangle){X, 64, 32, 32};
+
+                X += 32;
+            }
+            UnloadImage(entities_img);
+
+            ctx->entities_tex = LoadTextureFromImage(full_img);
+            UnloadImage(full_img);
+        }
 
         ctx->selected_entity = NULL;
 
@@ -646,7 +663,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                         if (len - buf_it >= sizeof(*init_map_body)) {
                             init_map_body = (comm_server_init_map_body *)(ctx->read_buffer.base + buf_it);
                             ctx->my_server_id = init_map_body->your_id;
-                            ctx->clients.used = init_map_body->num_clients;
+                            ctx->clients.used = init_map_body->num_clients + 1;
                             initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
                             ctx->current_screen = client_screen_names::GAME;
                             sitrep(SITREP_DEBUG, "INIT_EVERYBODY");
