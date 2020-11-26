@@ -29,6 +29,7 @@ struct server_context {
     } map;
 
     struct {
+        bool **discovered_map;
         communication *comms;
         bool *admins;
         bool *connecteds;
@@ -67,185 +68,61 @@ void add_unit(communication *comm, server_context *ctx, v2<u32> pos, unit_names 
     comm_write(comm, &add_unit_body, sizeof(add_unit_body));
 }
 
-void discover_star(communication *comm, server_context *ctx, v2<u32> center) {
+void discover_3x3(u32 client_id, server_context *ctx, v2<u32> center) {
+    communication *comm = &ctx->clients.comms[client_id];
     comm_server_header header;
     comm_server_discover_body discover_body;
     comm_server_discover_body_tile *discover_body_tiles;
 
-    header.name = comm_server_msg_names::DISCOVER;
-    comm_write(comm, &header, sizeof(header));
-
+    u32 max_tiles = 9;
     u32 num = 0;
-    v2<u32> pos = center;
-    discover_body_tiles = (comm_server_discover_body_tile *)(ctx->temp_buffer.base + ctx->temp_buffer.used);
+    v2<u32> pos;
+    discover_body_tiles = (comm_server_discover_body_tile *)memory_arena_use(
+                            &ctx->temp_buffer, sizeof(*discover_body_tiles) * max_tiles);
 
-    u32 idx = pos.y * ctx->map.terrain_width + pos.x;
-    discover_body_tiles[num].name = ctx->map.terrain[idx];
-    discover_body_tiles[num].position = pos;
-    ++num;
+    for (s32 Y = center.y - 1; Y <= center.y + 1; ++Y) {
+        if (Y < 0) continue;
+        if (Y > ctx->map.terrain_height - 1) continue;
+        for (s32 X = center.x - 1; X <= center.x + 1; ++X) {
+            if (X < 0) continue;
+            if (X > ctx->map.terrain_width - 1) continue;
 
-    if (pos.x > 0) {
-        v2<u32> p = pos;
-        p.x -= 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
+            u32 idx = Y * ctx->map.terrain_width + X;
+            
+            bool previously_discovered = ctx->clients.discovered_map[client_id][idx];
 
-    if (pos.x < ctx->map.terrain_width - 1) {
-        v2<u32> p = pos;
-        p.x += 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
+            if (!previously_discovered) {
+                ctx->clients.discovered_map[client_id][idx] = true;
+                pos.x = X;
+                pos.y = Y;
+                u32 num_entities;
+                entity **entities = find_entities_at_position(ctx->map.entities, pos, &ctx->temp_buffer, &num_entities);
 
-    if (pos.y > 0) {
-        v2<u32> p = pos;
-        p.y -= 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
+                for (u32 i = 0; i < num_entities; ++i) {
+                    if (entities[i]->type == entity_types::STRUCTURE) {
+                        header.name = comm_server_msg_names::DISCOVER_TOWN;
+                        comm_write(comm, &header, sizeof(header));
 
-    if (pos.y < ctx->map.terrain_height - 1) {
-        v2<u32> p = pos;
-        p.y += 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
+                        comm_server_discover_town_body discover_town_body;
+                        discover_town_body.id = entities[i]->server_id;
+                        discover_town_body.owner = entities[i]->owner;
+                        discover_town_body.position = entities[i]->position;
+                        comm_write(comm, &discover_town_body, sizeof(discover_town_body));
+                    }
+                }
 
-    discover_body.num = num;
-    comm_write(comm, &discover_body, sizeof(discover_body));
-    comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
-}
-
-void discover_3x3(communication *comm, server_context *ctx, v2<u32> center) {
-    comm_server_header header;
-    comm_server_discover_body discover_body;
-    comm_server_discover_body_tile *discover_body_tiles;
-
-    header.name = comm_server_msg_names::DISCOVER;
-    comm_write(comm, &header, sizeof(header));
-
-    u32 num = 0;
-    v2<u32> pos = center;
-    discover_body_tiles = (comm_server_discover_body_tile *)(ctx->temp_buffer.base + ctx->temp_buffer.used);
-
-    u32 idx = pos.y * ctx->map.terrain_width + pos.x;
-    discover_body_tiles[num].name = ctx->map.terrain[idx];
-    discover_body_tiles[num].position = pos;
-    ++num;
-
-    if (pos.x > 0 && pos.y > 0) {
-        v2<u32> p = pos;
-        p.x -= 1;
-        p.y -= 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    if (pos.x > 0) {
-        v2<u32> p = pos;
-        p.x -= 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    if (pos.x < ctx->map.terrain_width - 1) {
-        v2<u32> p = pos;
-        p.x += 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    if (pos.x > 0 && pos.y < ctx->map.terrain_height - 1) {
-        v2<u32> p = pos;
-        p.x -= 1;
-        p.y += 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    if (pos.y > 0) {
-        v2<u32> p = pos;
-        p.y -= 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    if (pos.y < ctx->map.terrain_height - 1) {
-        v2<u32> p = pos;
-        p.y += 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    if (pos.x < ctx->map.terrain_width && pos.y > 0) {
-        v2<u32> p = pos;
-        p.x += 1;
-        p.y -= 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    if (pos.x < ctx->map.terrain_width && pos.y < ctx->map.terrain_height) {
-        v2<u32> p = pos;
-        p.x += 1;
-        p.y += 1;
-        idx = p.y * ctx->map.terrain_width + p.x; 
-        discover_body_tiles[num].name = ctx->map.terrain[idx];
-        discover_body_tiles[num].position = p;
-        ++num;
-    }
-
-    discover_body.num = num;
-    comm_write(comm, &discover_body, sizeof(discover_body));
-    comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
-
-    auto ent_iter = ctx->map.entities.first;
-    while (ent_iter) {
-        auto ent = ent_iter->payload;
-        if (ent->type == entity_types::STRUCTURE) {
-            auto town = (structure *)ent;
-            v2<u32> town_pos = town->position;
-            v2<s32> d;
-            d.x = (s32)town_pos.x - (s32)center.x;
-            d.y = (s32)town_pos.y - (s32)center.y;
-
-            if ((d.x >= -1 && d.x <= 1) && (d.y >= -1 && d.y <= 1)) {
-                header.name = comm_server_msg_names::DISCOVER_TOWN;
-                comm_write(comm, &header, sizeof(header));
-
-                comm_server_discover_town_body discover_town_body;
-                discover_town_body.id = town->server_id;
-                discover_town_body.owner = town->owner;
-                discover_town_body.position = town_pos;
-                comm_write(comm, &discover_town_body, sizeof(discover_town_body));
+                discover_body_tiles[num].position = pos;
+                discover_body_tiles[num].name = ctx->map.terrain[idx];
+                ++num;
             }
         }
-
-        ent_iter = ent_iter->next;
     }
+
+    header.name = comm_server_msg_names::DISCOVER;
+    comm_write(comm, &header, sizeof(header));
+    discover_body.num = num;
+    comm_write(comm, &discover_body, sizeof(discover_body));
+    comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
 }
 
 real32 interpolate(real32 a, real32 b, real32 w) {
@@ -455,6 +332,14 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
         ctx->temp_buffer = memory_arena_child(mem, MB(80), "server_memory_temp");
         ctx->read_buffer = memory_arena_child(mem, MB(10), "server_memory_read");
 
+        ctx->map.terrain_width = MAP_GRID_WIDTH;
+        ctx->map.terrain_height = MAP_GRID_HEIGHT;
+        ctx->map.terrain = (terrain_names *)memory_arena_use(mem,
+                                                sizeof(*ctx->map.terrain)
+                                                * ctx->map.terrain_width
+                                                * ctx->map.terrain_height
+                                                );
+
         ctx->clients.used = 1;
         ctx->clients.max = 32;
         ctx->clients.comms = (communication *)memory_arena_use(mem,
@@ -469,21 +354,18 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                                 sizeof(*ctx->clients.connecteds)
                                                 * ctx->clients.max
                                                 );
+        ctx->clients.discovered_map = (bool **)memory_arena_use(mem,
+                                                sizeof(*ctx->clients.discovered_map)
+                                                * ctx->clients.max
+                                                );
 
+        u32 terrain_size = ctx->map.terrain_width * ctx->map.terrain_height;
         for (u32 i = 1; i < num_comms; ++i) {
             ctx->clients.comms[i] = comms[i - 1];
+            ctx->clients.discovered_map[i] = (bool *)memory_arena_use(mem, sizeof(**ctx->clients.discovered_map) * terrain_size);
             ++ctx->clients.used;
         }
         ctx->clients.admins[1] = true;
-
-        ctx->map.terrain_width = MAP_GRID_WIDTH;
-        ctx->map.terrain_height = MAP_GRID_HEIGHT;
-        ctx->map.terrain = (terrain_names *)memory_arena_use(mem,
-                                                sizeof(*ctx->map.terrain)
-                                                * ctx->map.terrain_width
-                                                * ctx->map.terrain_height
-                                                );
-
 
         generate_map(ctx, mem);
 
@@ -537,7 +419,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                 auto ent = ent_iter->payload;
                 if (ent->owner == i && ent->type == entity_types::STRUCTURE) {
                     auto town = (structure *)ent;
-                    discover_3x3(comm, ctx, town->position);
+                    discover_3x3(i, ctx, town->position);
 
                     comm_server_discover_town_body discover_town_body;
 
@@ -727,7 +609,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                         comm_write(comm, &head, sizeof(head));
                                         comm_write(comm, &b, sizeof(b));
 
-                                        discover_3x3(comm, ctx, pos);
+                                        discover_3x3(i, ctx, pos);
 
                                         if (u->slot != NULL) {
                                             u->slot->position = pos;
@@ -829,7 +711,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                                             comm_write(comm, &head, sizeof(head));
                                             comm_write(comm, &b, sizeof(b));
 
-                                            discover_3x3(comm, ctx, pos);
+                                            discover_3x3(i, ctx, pos);
                                         }
                                         break;
                                     }
