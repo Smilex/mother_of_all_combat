@@ -526,7 +526,7 @@ void draw_map(client_context *ctx) {
     }
 }
 
-CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
+CLIENT_UPDATE(client_update) {
     client_context *ctx = (client_context *)mem->base;
 
     if (!ctx->is_init) {
@@ -630,8 +630,368 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
             
         }
 
+        ctx->current_screen = client_screen_names::MAIN_MENU;
+
         ctx->is_init = true;
     }
+
+    if (ctx->current_screen == client_screen_names::MAIN_MENU) {
+        comm_server_header *header;
+        s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max); 
+        u32 buf_it = sizeof(comm_shared_header);
+        if (len > 0) {
+            while (len - buf_it >= sizeof(*header)) {
+                header = (comm_server_header *)(ctx->read_buffer.base + buf_it);
+                buf_it += sizeof(*header);
+                if (header->name == comm_server_msg_names::PING) {
+                    comm_client_header client_header;
+                    client_header.name = comm_client_msg_names::PONG;
+                    comm_write(comm, &client_header, sizeof(client_header));
+                }
+            }
+        }
+    } else if (ctx->current_screen == client_screen_names::INITIALIZE_GAME) {
+        comm_server_header *header;
+        s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max); 
+        u32 buf_it = sizeof(comm_shared_header);
+        if (len > 0) {
+            while (len - buf_it >= sizeof(*header)) {
+                header = (comm_server_header *)(ctx->read_buffer.base + buf_it);
+                buf_it += sizeof(*header);
+                if (header->name == comm_server_msg_names::INIT_MAP) {
+                    comm_server_init_map_body *init_map_body;
+                    if (len - buf_it >= sizeof(*init_map_body)) {
+                        init_map_body = (comm_server_init_map_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*init_map_body);
+                        ctx->my_server_id = init_map_body->your_id;
+                        ctx->clients.used = init_map_body->num_clients + 1;
+                        initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
+                        ctx->current_screen = client_screen_names::GAME;
+                        sitrep(SITREP_DEBUG, "INIT_EVERYBODY");
+                        PlayMusicStream(ctx->background_music);
+                    }
+                } else if (header->name == comm_server_msg_names::PING) {
+                    comm_client_header client_header;
+                    client_header.name = comm_client_msg_names::PONG;
+                    comm_write(comm, &client_header, sizeof(client_header));
+                } else if (header->name == comm_server_msg_names::YOUR_TURN) {
+                    sitrep(SITREP_DEBUG, "WHOOP");
+                    ctx->my_turn = true;
+                }
+            }
+        }
+    } else if (ctx->current_screen == client_screen_names::GAME) {
+        UpdateMusicStream(ctx->background_music);
+
+        real32 scr_width = GetScreenWidth();
+        real32 scr_height = GetScreenHeight();
+
+        if (IsKeyPressed(KEY_LEFT)) {
+            if (ctx->camera.x > 0) {
+                ctx->camera.x -= 1;
+            }
+        }
+        if (IsKeyPressed(KEY_RIGHT)) {
+            if (ctx->camera.x < ctx->map.width) {
+                ctx->camera.x += 1;
+            }
+        }
+        if (IsKeyPressed(KEY_UP)) {
+            if (ctx->camera.y > 0) {
+                ctx->camera.y -= 1;
+            }
+        }
+        if (IsKeyPressed(KEY_DOWN)) {
+            if (ctx->camera.y < ctx->map.height) {
+                ctx->camera.y += 1;
+            }
+        }
+
+        if (!is_pt_in_gui(ctx, GetMousePosition())) {
+            Vector2 mouse_pos = GetMousePosition();
+            v2<u32> mouse_tile_pos;
+            real32 tile_width = 32.0f;
+            real32 tile_height = 32.0f;
+            mouse_tile_pos.x = (u32)floor(mouse_pos.x / tile_width);
+            mouse_tile_pos.y = (u32)floor(mouse_pos.y / tile_height);
+            mouse_tile_pos.x += ctx->camera.x;
+            mouse_tile_pos.y += ctx->camera.y;
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                if (ctx->selected_entity != NULL) {
+                    if (ctx->selected_entity->type == entity_types::UNIT) {
+                        auto u = (unit *)ctx->selected_entity;
+                        v2<u32> prev_path = u->position;
+                        v2<u32> *paths;
+                        u32 num_paths = get_path_for_unit(ctx, u, mouse_tile_pos, &ctx->temp_mem, &paths);
+
+                        for (u32 i = 0; i < num_paths; ++i) {
+                            u32 num_entities;
+                            entity **entities = find_entities_at_position(ctx->map.entities, paths[i], &ctx->temp_mem, &num_entities);
+                            v2<s32> d;
+                            d.x = (s32)paths[i].x - (s32)prev_path.x;
+                            d.y = (s32)paths[i].y - (s32)prev_path.y;
+
+                            comm_client_header header;
+                            if (u->loaded_by != NULL) {
+                                header.name = comm_client_msg_names::UNLOAD_UNIT;
+                                comm_write(comm, &header, sizeof(header));
+                                comm_client_unload_unit_body body;
+                                body.unit_id = u->server_id;
+                                body.delta = d;
+                                comm_write(comm, &body, sizeof(body));
+                            } else {
+                                unit *u_that_loads = NULL;
+                                if (u->name == unit_names::SOLDIER) {
+                                    for (u32 j = 0; j < num_entities; ++j) {
+                                        if (entities[j]->type == entity_types::UNIT) {
+                                            auto u = (unit *)(entities[j]);
+                                            if (u->name == unit_names::CARAVAN) {
+                                                u_that_loads = u;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (u_that_loads != NULL) {
+                                    header.name = comm_client_msg_names::LOAD_UNIT;
+                                    comm_write(comm, &header, sizeof(header));
+                                    comm_client_load_unit_body body;
+                                    body.unit_that_loads = u_that_loads->server_id; 
+                                    body.unit_to_load = u->server_id;
+                                    comm_write(comm, &body, sizeof(body));
+                                } else {
+                                    header.name = comm_client_msg_names::MOVE_UNIT;
+                                    comm_write(comm, &header, sizeof(header));
+                                    comm_client_move_unit_body body;
+                                    body.unit_id = u->server_id;
+                                    body.delta = d;
+                                    comm_write(comm, &body, sizeof(body));
+                                }
+                            }
+
+                            prev_path = paths[i];
+                        }
+                    }
+                }
+            } else if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+                u32 num_entities;
+                entity **entities = find_entities_at_position(ctx->map.entities, mouse_tile_pos, &ctx->temp_mem, &num_entities);
+                if (num_entities > 0) {
+                    bool found = false;
+                    for (u32 i = 0; i < num_entities; ++i) {
+                        if (entities[i] == ctx->selected_entity) {
+                            found = true;
+                            if (i == num_entities - 1) {
+                                ctx->selected_entity = entities[0];
+                            } else {
+                                ctx->selected_entity = entities[i + 1];
+                            }
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        ctx->selected_entity = entities[0];
+                    }
+                } else {
+                    ctx->selected_entity = NULL;
+                }
+            }
+        }
+
+        comm_server_header *header;
+        s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
+        u32 buf_it = sizeof(comm_shared_header);
+        if (len > 0) {
+            while (len - buf_it >= sizeof(*header)) {
+                header = (comm_server_header *)(ctx->read_buffer.base + buf_it);
+                buf_it += sizeof(*header);
+                if (header->name == comm_server_msg_names::DISCOVER) {
+                    comm_server_discover_body *discover_body;
+                    if (len - buf_it >= sizeof(*discover_body)) {
+                        discover_body = (comm_server_discover_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*discover_body);
+                        for (u32 i = 0; i < discover_body->num; ++i) {
+                            comm_server_discover_body_tile *tile = (comm_server_discover_body_tile *)(ctx->read_buffer.base + buf_it);
+                            buf_it += sizeof(*tile);
+                            ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] = tile->name;
+                        }
+                    }
+                    update_client_map(ctx);
+                } else if (header->name == comm_server_msg_names::DISCOVER_TOWN) {
+                    comm_server_discover_town_body *discover_town_body;
+                    if (len - buf_it >= sizeof(*discover_town_body)) {
+                        discover_town_body = (comm_server_discover_town_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*discover_town_body);
+
+                        bool found = false;
+                        auto ent_iter = ctx->map.entities.first;
+                        while (ent_iter) {
+                            auto ent = ent_iter->payload;
+                            if (ent->server_id == discover_town_body->id) {
+                                found = true;
+                            }
+                            ent_iter = ent_iter->next;
+                        }
+
+                        if (!found) {
+                            structure *town = (structure *)memory_arena_use(mem, sizeof(*town));
+                            ctx->map.entities.push_front(town);
+                            town->type = entity_types::STRUCTURE;
+                            town->position = discover_town_body->position;
+                            town->owner = discover_town_body->owner;
+                            town->server_id = discover_town_body->id;
+
+                            if (discover_town_body->owner == ctx->my_server_id) {
+                                s32 camera_x = (s32)discover_town_body->position.x;
+                                s32 camera_y = (s32)discover_town_body->position.y;
+                                u32 num_tiles_in_scr_width = scr_width / 32;
+                                u32 num_tiles_in_scr_height = scr_height / 32;
+                                u32 half_scr_width = num_tiles_in_scr_width >> 1;
+                                u32 half_scr_height = num_tiles_in_scr_height >> 1;
+                                camera_x -= half_scr_width;
+                                if (camera_x < 0)
+                                    camera_x = 0;
+                                camera_y -= half_scr_height;
+                                if (camera_y < 0)
+                                    camera_y = 0;
+                                ctx->camera.x = camera_x;
+                                ctx->camera.y = camera_y;
+                            }
+                        }
+                    }
+                } else if (header->name == comm_server_msg_names::YOUR_TURN) {
+                    ctx->my_turn = true;
+                } else if (header->name == comm_server_msg_names::SET_UNIT_ACTION_POINTS) {
+                    comm_server_set_unit_action_points_body *body;
+                    if (len - buf_it >= sizeof(*body)) {
+                        body = (comm_server_set_unit_action_points_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*body);
+                        auto ent_iter = ctx->map.entities.first;
+                        while (ent_iter) {
+                            auto ent = ent_iter->payload;
+                            if (ent->type == entity_types::UNIT) {
+                                auto u = (unit *)ent;
+                                if (u->server_id == body->unit_id) {
+                                    u->action_points = body->new_action_points;
+                                }
+                            }
+                            ent_iter = ent_iter->next;
+                        }
+                    }
+                } else if (header->name == comm_server_msg_names::CONSTRUCTION_SET) {
+                    comm_server_construction_set_body *construction_set_body;
+                    if (len - buf_it >= sizeof(*construction_set_body)) {
+                        construction_set_body = (comm_server_construction_set_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*construction_set_body);
+
+                        auto ent_iter = ctx->map.entities.first;
+                        while (ent_iter) {
+                            auto ent = ent_iter->payload;
+                            if (ent->type == entity_types::STRUCTURE) {
+                                auto town = (structure *)ent;
+                                if (town->server_id == construction_set_body->town_id) {
+                                    town->construction = construction_set_body->unit_name;
+                                }
+                            }
+                            ent_iter = ent_iter->next;
+                        }
+                        if (ctx->selected_entity != NULL && ctx->selected_entity->server_id == construction_set_body->town_id) {
+                            ctx->gui.town.build_active = (s32)construction_set_body->unit_name;
+                        }
+                    }
+                } else if (header->name == comm_server_msg_names::ADD_UNIT) {
+                    comm_server_add_unit_body *add_unit_body;
+                    if (len - buf_it >= sizeof(*add_unit_body)) {
+                        add_unit_body = (comm_server_add_unit_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*add_unit_body);
+
+                        unit *u = (unit *)memory_arena_use(mem, sizeof(*u));
+                        ctx->map.entities.push_front(u);
+                        ctx->selected_entity = u;
+                        u->type = entity_types::UNIT;
+                        u->server_id = add_unit_body->unit_id;
+                        u->position = add_unit_body->position;
+                        u->name = add_unit_body->unit_name;
+                        u->action_points = add_unit_body->action_points;
+                        u->owner = add_unit_body->owner;
+                    }
+                } else if (header->name == comm_server_msg_names::MOVE_UNIT) {
+                    comm_server_move_unit_body *move_unit_body;
+                    if (len - buf_it >= sizeof(*move_unit_body)) {
+                        move_unit_body = (comm_server_move_unit_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*move_unit_body);
+
+                        auto ent_iter = ctx->map.entities.first;
+                        while (ent_iter) {
+                            auto ent = ent_iter->payload;
+                            if (ent->type == entity_types::UNIT) {
+                                auto u = (unit *)ent;
+                                if (u->server_id == move_unit_body->unit_id) {
+                                    u->position = move_unit_body->new_position;
+                                    u->action_points = move_unit_body->action_points_left;
+                                    break;
+                                }
+                            }
+
+                            ent_iter = ent_iter->next;
+                        }
+                    }
+                } else if (header->name == comm_server_msg_names::LOAD_UNIT) {
+                    comm_server_load_unit_body *load_unit_body;
+                    if (len - buf_it >= sizeof(*load_unit_body)) {
+                        load_unit_body = (comm_server_load_unit_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*load_unit_body);
+
+                        auto ent_that_loads = find_entity_by_server_id(ctx->map.entities, load_unit_body->unit_that_loads);
+                        auto ent_to_load = find_entity_by_server_id(ctx->map.entities, load_unit_body->unit_to_load);
+                        if (ent_that_loads && ent_to_load) {
+                            if (ent_that_loads->type == entity_types::UNIT &&
+                                ent_to_load->type == entity_types::UNIT) {
+                                auto u_to_load = (unit *)ent_to_load;
+                                auto u_that_loads = (unit *)ent_that_loads;
+                                u_to_load->action_points = load_unit_body->action_points_left;
+                                u_to_load->position = load_unit_body->new_position;
+                                u_that_loads->slot = u_to_load;
+                                u_to_load->loaded_by = u_that_loads;
+                            }
+                        }
+                    }
+                } else if (header->name == comm_server_msg_names::UNLOAD_UNIT) {
+                    comm_server_unload_unit_body *unload_unit_body;
+                    if (len - buf_it >= sizeof(*unload_unit_body)) {
+                        unload_unit_body = (comm_server_unload_unit_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*unload_unit_body);
+
+                        auto ent = find_entity_by_server_id(ctx->map.entities, unload_unit_body->unit_id);
+                        if (ent) {
+                            if (ent->type == entity_types::UNIT) {
+                                auto u = (unit *)ent;
+                                u->action_points = unload_unit_body->action_points_left;
+                                u->position = unload_unit_body->new_position;
+                                if (u->loaded_by) {
+                                    u->loaded_by->slot = NULL;
+                                    u->loaded_by = NULL;
+                                }
+                            }
+                        }
+                    }
+                } else if (header->name == comm_server_msg_names::PING) {
+                    comm_client_header client_header;
+                    client_header.name = comm_client_msg_names::PONG;
+                    comm_write(comm, &client_header, sizeof(client_header));
+                } else {
+                    sitrep(SITREP_WARNING, "Unhandled server message (%u)", header->name);
+                }
+            }
+        }
+    }
+
+    comm_flush(comm);
+}
+
+CLIENT_RENDER(client_render) {
+    client_context *ctx = (client_context *)mem->base;
 
     BeginDrawing();
         ClearBackground(WHITE);
@@ -641,340 +1001,17 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
             real32 scrHeight = GetScreenHeight();
             if (GuiButton(CLITERAL(Rectangle){scrWidth / 2 - 150 / 2, scrHeight / 2 - 15, 150, 30}, "Start")) {
                 comm_client_header header;
-                header.name = comm_client_msg_names::CONNECT;
-
-                comm_write(comm, &header, sizeof(header));
-
                 header.name = comm_client_msg_names::START;
-                comm_write(comm, &header, sizeof(header));
 
+                comm_write(comm, &header, sizeof(header));
                 ctx->current_screen = client_screen_names::INITIALIZE_GAME;
             }
         } else if (ctx->current_screen == client_screen_names::INITIALIZE_GAME) {
-            comm_server_header *header;
-            s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max); 
-            u32 buf_it = sizeof(comm_shared_header);
-            if (len > 0) {
-                if (len - buf_it >= sizeof(*header)) {
-                    header = (comm_server_header *)(ctx->read_buffer.base + buf_it);
-                    if (header->name == comm_server_msg_names::INIT_MAP) {
-                        comm_server_init_map_body *init_map_body;
-                        buf_it += sizeof(*header);
-                        if (len - buf_it >= sizeof(*init_map_body)) {
-                            init_map_body = (comm_server_init_map_body *)(ctx->read_buffer.base + buf_it);
-                            ctx->my_server_id = init_map_body->your_id;
-                            ctx->clients.used = init_map_body->num_clients + 1;
-                            initialize_map(ctx, mem, init_map_body->width, init_map_body->height);
-                            ctx->current_screen = client_screen_names::GAME;
-                            sitrep(SITREP_DEBUG, "INIT_EVERYBODY");
-                            //PlayMusicStream(ctx->background_music);
-                        }
-                    }
-                }
-            }
         } else if (ctx->current_screen == client_screen_names::GAME) {
-            UpdateMusicStream(ctx->background_music);
-
             real32 scr_width = GetScreenWidth();
             real32 scr_height = GetScreenHeight();
 
-            if (IsKeyPressed(KEY_LEFT)) {
-                if (ctx->camera.x > 0) {
-                    ctx->camera.x -= 1;
-                }
-            }
-            if (IsKeyPressed(KEY_RIGHT)) {
-                if (ctx->camera.x < ctx->map.width) {
-                    ctx->camera.x += 1;
-                }
-            }
-            if (IsKeyPressed(KEY_UP)) {
-                if (ctx->camera.y > 0) {
-                    ctx->camera.y -= 1;
-                }
-            }
-            if (IsKeyPressed(KEY_DOWN)) {
-                if (ctx->camera.y < ctx->map.height) {
-                    ctx->camera.y += 1;
-                }
-            }
 
-            if (!is_pt_in_gui(ctx, GetMousePosition())) {
-                Vector2 mouse_pos = GetMousePosition();
-                v2<u32> mouse_tile_pos;
-                real32 tile_width = 32.0f;
-                real32 tile_height = 32.0f;
-                mouse_tile_pos.x = (u32)floor(mouse_pos.x / tile_width);
-                mouse_tile_pos.y = (u32)floor(mouse_pos.y / tile_height);
-                mouse_tile_pos.x += ctx->camera.x;
-                mouse_tile_pos.y += ctx->camera.y;
-                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                    if (ctx->selected_entity != NULL) {
-                        if (ctx->selected_entity->type == entity_types::UNIT) {
-                            auto u = (unit *)ctx->selected_entity;
-                            v2<u32> prev_path = u->position;
-                            v2<u32> *paths;
-                            u32 num_paths = get_path_for_unit(ctx, u, mouse_tile_pos, &ctx->temp_mem, &paths);
-
-                            for (u32 i = 0; i < num_paths; ++i) {
-                                u32 num_entities;
-                                entity **entities = find_entities_at_position(ctx->map.entities, paths[i], &ctx->temp_mem, &num_entities);
-                                v2<s32> d;
-                                d.x = (s32)paths[i].x - (s32)prev_path.x;
-                                d.y = (s32)paths[i].y - (s32)prev_path.y;
-
-                                comm_client_header header;
-                                if (u->loaded_by != NULL) {
-                                    header.name = comm_client_msg_names::UNLOAD_UNIT;
-                                    comm_write(comm, &header, sizeof(header));
-                                    comm_client_unload_unit_body body;
-                                    body.unit_id = u->server_id;
-                                    body.delta = d;
-                                    comm_write(comm, &body, sizeof(body));
-                                } else {
-                                    unit *u_that_loads = NULL;
-                                    if (u->name == unit_names::SOLDIER) {
-                                        for (u32 j = 0; j < num_entities; ++j) {
-                                            if (entities[j]->type == entity_types::UNIT) {
-                                                auto u = (unit *)(entities[j]);
-                                                if (u->name == unit_names::CARAVAN) {
-                                                    u_that_loads = u;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if (u_that_loads != NULL) {
-                                        header.name = comm_client_msg_names::LOAD_UNIT;
-                                        comm_write(comm, &header, sizeof(header));
-                                        comm_client_load_unit_body body;
-                                        body.unit_that_loads = u_that_loads->server_id; 
-                                        body.unit_to_load = u->server_id;
-                                        comm_write(comm, &body, sizeof(body));
-                                    } else {
-                                        header.name = comm_client_msg_names::MOVE_UNIT;
-                                        comm_write(comm, &header, sizeof(header));
-                                        comm_client_move_unit_body body;
-                                        body.unit_id = u->server_id;
-                                        body.delta = d;
-                                        comm_write(comm, &body, sizeof(body));
-                                    }
-                                }
-
-                                prev_path = paths[i];
-                            }
-                        }
-                    }
-                } else if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-                    u32 num_entities;
-                    entity **entities = find_entities_at_position(ctx->map.entities, mouse_tile_pos, &ctx->temp_mem, &num_entities);
-                    if (num_entities > 0) {
-                        bool found = false;
-                        for (u32 i = 0; i < num_entities; ++i) {
-                            if (entities[i] == ctx->selected_entity) {
-                                found = true;
-                                if (i == num_entities - 1) {
-                                    ctx->selected_entity = entities[0];
-                                } else {
-                                    ctx->selected_entity = entities[i + 1];
-                                }
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            ctx->selected_entity = entities[0];
-                        }
-                    } else {
-                        ctx->selected_entity = NULL;
-                    }
-                }
-            }
-
-            comm_server_header *header;
-            s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
-            u32 buf_it = sizeof(comm_shared_header);
-            if (len > 0) {
-                while (len - buf_it >= sizeof(*header)) {
-                    header = (comm_server_header *)(ctx->read_buffer.base + buf_it);
-                    buf_it += sizeof(*header);
-                    if (header->name == comm_server_msg_names::DISCOVER) {
-                        comm_server_discover_body *discover_body;
-                        if (len - buf_it >= sizeof(*discover_body)) {
-                            discover_body = (comm_server_discover_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*discover_body);
-                            for (u32 i = 0; i < discover_body->num; ++i) {
-                                comm_server_discover_body_tile *tile = (comm_server_discover_body_tile *)(ctx->read_buffer.base + buf_it);
-                                buf_it += sizeof(*tile);
-                                ctx->map.terrain[tile->position.y * ctx->map.width + tile->position.x] = tile->name;
-                            }
-                        }
-                        update_client_map(ctx);
-                    } else if (header->name == comm_server_msg_names::PING) {
-                        comm_client_header client_header;
-                        client_header.name = comm_client_msg_names::PONG;
-                        comm_write(comm, &client_header, sizeof(client_header));
-                    } else if (header->name == comm_server_msg_names::DISCOVER_TOWN) {
-                        comm_server_discover_town_body *discover_town_body;
-                        if (len - buf_it >= sizeof(*discover_town_body)) {
-                            discover_town_body = (comm_server_discover_town_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*discover_town_body);
-
-                            bool found = false;
-                            auto ent_iter = ctx->map.entities.first;
-                            while (ent_iter) {
-                                auto ent = ent_iter->payload;
-                                if (ent->server_id == discover_town_body->id) {
-                                    found = true;
-                                }
-                                ent_iter = ent_iter->next;
-                            }
-
-                            if (!found) {
-                                structure *town = (structure *)memory_arena_use(mem, sizeof(*town));
-                                ctx->map.entities.push_front(town);
-                                town->type = entity_types::STRUCTURE;
-                                town->position = discover_town_body->position;
-                                town->owner = discover_town_body->owner;
-                                town->server_id = discover_town_body->id;
-
-                                if (discover_town_body->owner == ctx->my_server_id) {
-                                    s32 camera_x = (s32)discover_town_body->position.x;
-                                    s32 camera_y = (s32)discover_town_body->position.y;
-                                    u32 num_tiles_in_scr_width = scr_width / 32;
-                                    u32 num_tiles_in_scr_height = scr_height / 32;
-                                    u32 half_scr_width = num_tiles_in_scr_width >> 1;
-                                    u32 half_scr_height = num_tiles_in_scr_height >> 1;
-                                    camera_x -= half_scr_width;
-                                    if (camera_x < 0)
-                                        camera_x = 0;
-                                    camera_y -= half_scr_height;
-                                    if (camera_y < 0)
-                                        camera_y = 0;
-                                    ctx->camera.x = camera_x;
-                                    ctx->camera.y = camera_y;
-                                }
-                            }
-                        }
-                    } else if (header->name == comm_server_msg_names::YOUR_TURN) {
-                        ctx->my_turn = true;
-                    } else if (header->name == comm_server_msg_names::SET_UNIT_ACTION_POINTS) {
-                        comm_server_set_unit_action_points_body *body;
-                        if (len - buf_it >= sizeof(*body)) {
-                            body = (comm_server_set_unit_action_points_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*body);
-                            auto ent_iter = ctx->map.entities.first;
-                            while (ent_iter) {
-                                auto ent = ent_iter->payload;
-                                if (ent->type == entity_types::UNIT) {
-                                    auto u = (unit *)ent;
-                                    if (u->server_id == body->unit_id) {
-                                        u->action_points = body->new_action_points;
-                                    }
-                                }
-                                ent_iter = ent_iter->next;
-                            }
-                        }
-                    } else if (header->name == comm_server_msg_names::CONSTRUCTION_SET) {
-                        comm_server_construction_set_body *construction_set_body;
-                        if (len - buf_it >= sizeof(*construction_set_body)) {
-                            construction_set_body = (comm_server_construction_set_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*construction_set_body);
-
-                            auto ent_iter = ctx->map.entities.first;
-                            while (ent_iter) {
-                                auto ent = ent_iter->payload;
-                                if (ent->type == entity_types::STRUCTURE) {
-                                    auto town = (structure *)ent;
-                                    if (town->server_id == construction_set_body->town_id) {
-                                        town->construction = construction_set_body->unit_name;
-                                    }
-                                }
-                                ent_iter = ent_iter->next;
-                            }
-                            if (ctx->selected_entity != NULL && ctx->selected_entity->server_id == construction_set_body->town_id) {
-                                ctx->gui.town.build_active = (s32)construction_set_body->unit_name;
-                            }
-                        }
-                    } else if (header->name == comm_server_msg_names::ADD_UNIT) {
-                        comm_server_add_unit_body *add_unit_body;
-                        if (len - buf_it >= sizeof(*add_unit_body)) {
-                            add_unit_body = (comm_server_add_unit_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*add_unit_body);
-
-                            unit *u = (unit *)memory_arena_use(mem, sizeof(*u));
-                            ctx->map.entities.push_front(u);
-                            ctx->selected_entity = u;
-                            u->type = entity_types::UNIT;
-                            u->server_id = add_unit_body->unit_id;
-                            u->position = add_unit_body->position;
-                            u->name = add_unit_body->unit_name;
-                            u->action_points = add_unit_body->action_points;
-                            u->owner = add_unit_body->owner;
-                        }
-                    } else if (header->name == comm_server_msg_names::MOVE_UNIT) {
-                        comm_server_move_unit_body *move_unit_body;
-                        if (len - buf_it >= sizeof(*move_unit_body)) {
-                            move_unit_body = (comm_server_move_unit_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*move_unit_body);
-
-                            auto ent_iter = ctx->map.entities.first;
-                            while (ent_iter) {
-                                auto ent = ent_iter->payload;
-                                if (ent->type == entity_types::UNIT) {
-                                    auto u = (unit *)ent;
-                                    if (u->server_id == move_unit_body->unit_id) {
-                                        u->position = move_unit_body->new_position;
-                                        u->action_points = move_unit_body->action_points_left;
-                                        break;
-                                    }
-                                }
-
-                                ent_iter = ent_iter->next;
-                            }
-                        }
-                    } else if (header->name == comm_server_msg_names::LOAD_UNIT) {
-                        comm_server_load_unit_body *load_unit_body;
-                        if (len - buf_it >= sizeof(*load_unit_body)) {
-                            load_unit_body = (comm_server_load_unit_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*load_unit_body);
-
-                            auto ent_that_loads = find_entity_by_server_id(ctx->map.entities, load_unit_body->unit_that_loads);
-                            auto ent_to_load = find_entity_by_server_id(ctx->map.entities, load_unit_body->unit_to_load);
-                            if (ent_that_loads && ent_to_load) {
-                                if (ent_that_loads->type == entity_types::UNIT &&
-                                    ent_to_load->type == entity_types::UNIT) {
-                                    auto u_to_load = (unit *)ent_to_load;
-                                    auto u_that_loads = (unit *)ent_that_loads;
-                                    u_to_load->action_points = load_unit_body->action_points_left;
-                                    u_to_load->position = load_unit_body->new_position;
-                                    u_that_loads->slot = u_to_load;
-                                    u_to_load->loaded_by = u_that_loads;
-                                }
-                            }
-                        }
-                    } else if (header->name == comm_server_msg_names::UNLOAD_UNIT) {
-                        comm_server_unload_unit_body *unload_unit_body;
-                        if (len - buf_it >= sizeof(*unload_unit_body)) {
-                            unload_unit_body = (comm_server_unload_unit_body *)(ctx->read_buffer.base + buf_it);
-                            buf_it += sizeof(*unload_unit_body);
-
-                            auto ent = find_entity_by_server_id(ctx->map.entities, unload_unit_body->unit_id);
-                            if (ent) {
-                                if (ent->type == entity_types::UNIT) {
-                                    auto u = (unit *)ent;
-                                    u->action_points = unload_unit_body->action_points_left;
-                                    u->position = unload_unit_body->new_position;
-                                    if (u->loaded_by) {
-                                        u->loaded_by->slot = NULL;
-                                        u->loaded_by = NULL;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             draw_map(ctx);
 
             if (ctx->selected_entity != NULL) {
@@ -1065,6 +1102,7 @@ CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
                     GuiLabel(CLITERAL(Rectangle){window.x + 100, window.y + 25, window.width - 200, window.height - 25}, "Waiting on your turn");
             }
         }
+
     EndDrawing();
 
     comm_flush(comm);

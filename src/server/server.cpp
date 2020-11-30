@@ -323,7 +323,7 @@ void send_entire_map(communication *comm, server_context *ctx) {
     }
 }
 
-void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
+void server_update(memory_arena *mem, communication *comms, u32 num_comms, server_input input) {
     struct server_context *ctx = (struct server_context *)mem->base;
 
     if (!ctx->is_init) {
@@ -361,10 +361,12 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 
         u32 terrain_size = ctx->map.terrain_width * ctx->map.terrain_height;
         for (u32 i = 1; i < num_comms; ++i) {
+            ctx->clients.connecteds[i] = true;
             ctx->clients.comms[i] = comms[i - 1];
             ctx->clients.discovered_map[i] = (bool *)memory_arena_use(mem, sizeof(**ctx->clients.discovered_map) * terrain_size);
             ++ctx->clients.used;
         }
+        ctx->clients.connecteds[0] = false;
         ctx->clients.admins[1] = true;
 
         generate_map(ctx, mem);
@@ -384,10 +386,7 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
 			while (read_it < len) {
 				if (len - read_it >= sizeof(*header)) {
 					header = (comm_client_header *)(ctx->read_buffer.base + read_it);
-					if (header->name == comm_client_msg_names::CONNECT) {
-						ctx->clients.connecteds[i] = true;
-						sitrep(SITREP_DEBUG, "CONNECTED(%d)", i);
-					} else if(header->name == comm_client_msg_names::START) {
+					if(header->name == comm_client_msg_names::START) {
 						if (ctx->clients.admins[i]) {
 							ctx->current_state = server_state_names::INIT_EVERYBODY;
 							sitrep(SITREP_DEBUG, "STARTING");
@@ -441,6 +440,8 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms) {
                 ctx->current_turn_id = i;
                 header.name = comm_server_msg_names::YOUR_TURN;
                 comm_write(comm, &header, sizeof(header));
+                sitrep(SITREP_DEBUG, "%d's TURN", i);
+                comm_flush(comm);
 			}
         }
 

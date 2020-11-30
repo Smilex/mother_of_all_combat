@@ -426,6 +426,10 @@ struct dictionary {
     }
 };
 
+struct server_input {
+    bool start_game;
+};
+
 struct entity {
     entity_types type;
     v2<u32> position;
