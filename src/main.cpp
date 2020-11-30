@@ -21,7 +21,7 @@ typedef CLIENT_RENDER(client_render_t);
 #include "ai/ai.cpp"
 
 #define NUM_AI 1
-#define NUM_CLIENTS 1
+#define NUM_CLIENTS 2
 
 enum class main_screen_names {
     MAIN_MENU = 0,
@@ -29,6 +29,7 @@ enum class main_screen_names {
 } main_screen_name = main_screen_names::MAIN_MENU;
 
 server_input s_input = {0};
+server_output s_output = {0};
 
 memory_arena total_memory, server_memory, client_memory[NUM_CLIENTS], ai_memory[NUM_AI];
 communication server_to_client_comm[NUM_CLIENTS], client_to_server_comm[NUM_CLIENTS], ai_to_server_comm[NUM_AI], server_to_ai_comm[NUM_AI];
@@ -85,17 +86,20 @@ int main(int argc, char *argv[]) {
 
     server_memory = memory_arena_child(&total_memory, MB(100), "server_memory");
     communication server_comms[NUM_CLIENTS + NUM_AI];
+
+    ring_buffer<u8> *server_to_client_ring_buffer = (ring_buffer<u8> *)malloc(sizeof(*server_to_client_ring_buffer) * NUM_CLIENTS);
+    ring_buffer<u8> *client_to_server_ring_buffer = (ring_buffer<u8> *)malloc(sizeof(*client_to_server_ring_buffer) * NUM_CLIENTS);
     for (u32 i = 0; i < NUM_CLIENTS; i++) {
         client_memory[i] = memory_arena_child(&total_memory, MB(100), "client_memory");
 
-        ring_buffer<u8> server_to_client_ring_buffer = ring_buffer<u8>(&total_memory, MB(10));
-        ring_buffer<u8> client_to_server_ring_buffer = ring_buffer<u8>(&total_memory, MB(10));
+        server_to_client_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(10));
+        client_to_server_ring_buffer[i] = ring_buffer<u8>(&total_memory, MB(10));
 
-        server_to_client_pipe[i].in = &client_to_server_ring_buffer;
-        server_to_client_pipe[i].out = &server_to_client_ring_buffer;
+        server_to_client_pipe[i].in = &client_to_server_ring_buffer[i];
+        server_to_client_pipe[i].out = &server_to_client_ring_buffer[i];
 
-        client_to_server_pipe[i].in = &server_to_client_ring_buffer;
-        client_to_server_pipe[i].out = &client_to_server_ring_buffer;
+        client_to_server_pipe[i].in = &server_to_client_ring_buffer[i];
+        client_to_server_pipe[i].out = &client_to_server_ring_buffer[i];
 
         comm_server_memory_init(&server_to_client_comm[i], &server_to_client_pipe[i], memory_arena_child(&total_memory, MB(100), "server_to_client_memory"));
         comm_client_memory_init(&client_to_server_comm[i], &client_to_server_pipe[i], memory_arena_child(&total_memory, MB(100), "client_to_server_memory"));
@@ -137,17 +141,19 @@ int main(int argc, char *argv[]) {
     SetTargetFPS(60);
 
     while(!WindowShouldClose()) {
-        server_update(&server_memory, server_comms, NUM_CLIENTS + NUM_AI, s_input);
+        server_update(&server_memory, server_comms, NUM_CLIENTS + NUM_AI, s_input, &s_output);
         memset(&s_input, 0, sizeof(s_input));
 
         for (u32 i = 0; i < NUM_CLIENTS; ++i) {
             client_update_ptr(&client_memory[i], &client_to_server_comm[i]);
+            if (s_output.current_turn_id == 0) {
+                client_render_ptr(&client_memory[0], &client_to_server_comm[0]);
+            } else if (i == s_output.current_turn_id - 1) {
+                client_render_ptr(&client_memory[i], &client_to_server_comm[i]);
+            }
         }
-        client_render_ptr(&client_memory[0], &client_to_server_comm[0]);
-#if 0
         for (u32 i = 0; i < NUM_AI; ++i)
             ai_update(&ai_memory[i], &ai_to_server_comm[i]);
-#endif
     }
 
     CloseWindow();

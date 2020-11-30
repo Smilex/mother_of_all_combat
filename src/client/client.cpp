@@ -647,6 +647,10 @@ CLIENT_UPDATE(client_update) {
                     comm_client_header client_header;
                     client_header.name = comm_client_msg_names::PONG;
                     comm_write(comm, &client_header, sizeof(client_header));
+                } else if (header->name == comm_server_msg_names::STARTING) {
+                    ctx->current_screen = client_screen_names::INITIALIZE_GAME;
+                } else {
+                    sitrep(SITREP_WARNING, "(MAIN_MENU) Unhandled server message (%u)", header->name);
                 }
             }
         }
@@ -677,6 +681,8 @@ CLIENT_UPDATE(client_update) {
                 } else if (header->name == comm_server_msg_names::YOUR_TURN) {
                     sitrep(SITREP_DEBUG, "WHOOP");
                     ctx->my_turn = true;
+                } else {
+                    sitrep(SITREP_WARNING, "(INITIALIZE_GAME) Unhandled server message (%u)", header->name);
                 }
             }
         }
@@ -981,7 +987,7 @@ CLIENT_UPDATE(client_update) {
                     client_header.name = comm_client_msg_names::PONG;
                     comm_write(comm, &client_header, sizeof(client_header));
                 } else {
-                    sitrep(SITREP_WARNING, "Unhandled server message (%u)", header->name);
+                    sitrep(SITREP_WARNING, "(GAME) Unhandled server message (%u)", header->name);
                 }
             }
         }
@@ -1004,7 +1010,6 @@ CLIENT_RENDER(client_render) {
                 header.name = comm_client_msg_names::START;
 
                 comm_write(comm, &header, sizeof(header));
-                ctx->current_screen = client_screen_names::INITIALIZE_GAME;
             }
         } else if (ctx->current_screen == client_screen_names::INITIALIZE_GAME) {
         } else if (ctx->current_screen == client_screen_names::GAME) {

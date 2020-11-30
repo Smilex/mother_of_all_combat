@@ -182,7 +182,8 @@ enum class comm_server_msg_names {
     MOVE_UNIT,
     SET_UNIT_ACTION_POINTS,
     LOAD_UNIT,
-    UNLOAD_UNIT
+    UNLOAD_UNIT,
+    STARTING
 };
 
 enum class comm_client_msg_names {

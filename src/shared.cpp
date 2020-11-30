@@ -430,6 +430,10 @@ struct server_input {
     bool start_game;
 };
 
+struct server_output {
+    u32 current_turn_id;
+};
+
 struct entity {
     entity_types type;
     v2<u32> position;
