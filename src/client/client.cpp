@@ -526,44 +526,68 @@ void draw_map(client_context *ctx) {
     }
 }
 
-CLIENT_UPDATE(client_update) {
+CLIENT_INIT(client_init) {
     client_context *ctx = (client_context *)mem->base;
 
-    if (!ctx->is_init) {
-        memory_arena_use(mem, sizeof(*ctx));
-        ctx->read_buffer = memory_arena_child(mem, MB(50), "client_memory_read");
-        ctx->temp_mem = memory_arena_child(mem, MB(20), "client_memory_temp");
+    memory_arena_use(mem, sizeof(*ctx));
+    ctx->read_buffer = memory_arena_child(mem, MB(50), "client_memory_read");
+    ctx->temp_mem = memory_arena_child(mem, MB(20), "client_memory_temp");
 
-        ctx->clients.used = 1;
-        ctx->clients.max = 32;
-        ctx->clients.colors = (Color *)memory_arena_use(mem, sizeof(*ctx->clients.colors)
+    ctx->clients.used = 1;
+    ctx->clients.max = 32;
+    ctx->clients.colors = (Color *)memory_arena_use(mem, sizeof(*ctx->clients.colors)
+                                                    * ctx->clients.max
+                                                    );
+    ctx->clients.town_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.town_srcs)
+                                                    * ctx->clients.max
+                                                    );
+    ctx->clients.soldier_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.soldier_srcs)
+                                                    * ctx->clients.max
+                                                    );
+    ctx->clients.caravan_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.caravan_srcs)
                                                         * ctx->clients.max
                                                         );
-        ctx->clients.town_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.town_srcs)
-                                                        * ctx->clients.max
-                                                        );
-        ctx->clients.soldier_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.soldier_srcs)
-                                                        * ctx->clients.max
-                                                        );
-        ctx->clients.caravan_srcs = (Rectangle *)memory_arena_use(mem, sizeof(*ctx->clients.caravan_srcs)
-                                                            * ctx->clients.max
-                                                            );
 
-        {
-            u32 num_entities = 3;
-            real32 X = 0, Y = 0;
-            real32 client_tex_width = 32 * ctx->clients.max;
-            real32 client_tex_height = 32 * num_entities;
-            Image full_img = GenImageColor(client_tex_width, client_tex_height, PINK);
-            Image entities_img = LoadImage("assets/entities.png");
+    {
+        u32 num_entities = 3;
+        real32 X = 0, Y = 0;
+        real32 client_tex_width = 32 * ctx->clients.max;
+        real32 client_tex_height = 32 * num_entities;
+        Image full_img = GenImageColor(client_tex_width, client_tex_height, PINK);
+        Image entities_img = LoadImage("assets/entities.png");
 
-            Image entities_copy = ImageCopy(entities_img);
-            Color replace_color = CLITERAL(Color){0,0,0,0};
-            Color with_color = GRAY;
+        Image entities_copy = ImageCopy(entities_img);
+        Color replace_color = CLITERAL(Color){0,0,0,0};
+        Color with_color = GRAY;
+        ImageColorReplace(&entities_copy, replace_color, with_color);
+
+        Rectangle src = CLITERAL(Rectangle){0, 0, 32, 32};
+        Rectangle dst;
+        dst.x = X;
+        dst.y = Y;
+        dst.width = 32;
+        dst.height = 32 * num_entities;
+        ImageDraw(&full_img, entities_copy, src, dst, WHITE);
+        UnloadImage(entities_copy);
+
+        ctx->clients.town_srcs[0] = CLITERAL(Rectangle){X, 0, 32, 32};
+        ctx->clients.soldier_srcs[0] = CLITERAL(Rectangle){X, 32, 32, 32};
+        ctx->clients.caravan_srcs[0] = CLITERAL(Rectangle){X, 64, 32, 32};
+
+        X += 32;
+        for (u32 i = 1; i < ctx->clients.max; ++i) {
+            u8 red = rand() % 255;
+            u8 green = rand() % 255;
+            u8 blue = rand() % 255;
+            ctx->clients.colors[i] = CLITERAL(Color){red, green, blue, 255};
+
+            entities_copy = ImageCopy(entities_img);
+            replace_color = CLITERAL(Color){0,0,0,0};
+            with_color = ctx->clients.colors[i];
             ImageColorReplace(&entities_copy, replace_color, with_color);
 
-            Rectangle src = CLITERAL(Rectangle){0, 0, 32, 32};
-            Rectangle dst;
+            src = CLITERAL(Rectangle){0, 0, 32, 32};
+            dst;
             dst.x = X;
             dst.y = Y;
             dst.width = 32;
@@ -571,69 +595,47 @@ CLIENT_UPDATE(client_update) {
             ImageDraw(&full_img, entities_copy, src, dst, WHITE);
             UnloadImage(entities_copy);
 
-            ctx->clients.town_srcs[0] = CLITERAL(Rectangle){X, 0, 32, 32};
-            ctx->clients.soldier_srcs[0] = CLITERAL(Rectangle){X, 32, 32, 32};
-            ctx->clients.caravan_srcs[0] = CLITERAL(Rectangle){X, 64, 32, 32};
+            ctx->clients.town_srcs[i] = CLITERAL(Rectangle){X, 0, 32, 32};
+            ctx->clients.soldier_srcs[i] = CLITERAL(Rectangle){X, 32, 32, 32};
+            ctx->clients.caravan_srcs[i] = CLITERAL(Rectangle){X, 64, 32, 32};
 
             X += 32;
-            for (u32 i = 1; i < ctx->clients.max; ++i) {
-                u8 red = rand() % 255;
-                u8 green = rand() % 255;
-                u8 blue = rand() % 255;
-                ctx->clients.colors[i] = CLITERAL(Color){red, green, blue, 255};
-
-                entities_copy = ImageCopy(entities_img);
-                replace_color = CLITERAL(Color){0,0,0,0};
-                with_color = ctx->clients.colors[i];
-                ImageColorReplace(&entities_copy, replace_color, with_color);
-
-                src = CLITERAL(Rectangle){0, 0, 32, 32};
-                dst;
-                dst.x = X;
-                dst.y = Y;
-                dst.width = 32;
-                dst.height = 32 * num_entities;
-                ImageDraw(&full_img, entities_copy, src, dst, WHITE);
-                UnloadImage(entities_copy);
-
-                ctx->clients.town_srcs[i] = CLITERAL(Rectangle){X, 0, 32, 32};
-                ctx->clients.soldier_srcs[i] = CLITERAL(Rectangle){X, 32, 32, 32};
-                ctx->clients.caravan_srcs[i] = CLITERAL(Rectangle){X, 64, 32, 32};
-
-                X += 32;
-            }
-            UnloadImage(entities_img);
-
-            ctx->entities_tex = LoadTextureFromImage(full_img);
-            UnloadImage(full_img);
         }
+        UnloadImage(entities_img);
 
-        ctx->selected_entity = NULL;
-
-        real32 scr_width = GetScreenWidth();
-        real32 scr_height = GetScreenHeight();
-
-        ctx->gui.town.rect = CLITERAL(Rectangle){scr_width - 200, 0.0f, 200.0f, scr_height / 2};
-        ctx->gui.town.build_names[0] = "None";
-        ctx->gui.town.build_names[1] = "Soldier";
-        ctx->gui.town.build_names[2] = "Caravan";
-
-        ctx->gui.admin.rect = CLITERAL(Rectangle){scr_width - 200, scr_height / 2, 200, scr_height / 2};
-
-        ctx->gui.end_turn.rect = CLITERAL(Rectangle){scr_width / 2 - 60, scr_height - 30, 120, 30};
-
-        ctx->background_music = LoadMusicStream("assets/trouble_with_tribals.mp3");
-        SetMusicVolume(ctx->background_music, 0.03);
-
-        ctx->terrain_tex = LoadTexture("assets/terrain.png");
-        {
-            
-        }
-
-        ctx->current_screen = client_screen_names::MAIN_MENU;
-
-        ctx->is_init = true;
+        ctx->entities_tex = LoadTextureFromImage(full_img);
+        UnloadImage(full_img);
     }
+
+    ctx->selected_entity = NULL;
+
+    real32 scr_width = GetScreenWidth();
+    real32 scr_height = GetScreenHeight();
+
+    ctx->gui.town.rect = CLITERAL(Rectangle){scr_width - 200, 0.0f, 200.0f, scr_height / 2};
+    ctx->gui.town.build_names[0] = "None";
+    ctx->gui.town.build_names[1] = "Soldier";
+    ctx->gui.town.build_names[2] = "Caravan";
+
+    ctx->gui.admin.rect = CLITERAL(Rectangle){scr_width - 200, scr_height / 2, 200, scr_height / 2};
+
+    ctx->gui.end_turn.rect = CLITERAL(Rectangle){scr_width / 2 - 60, scr_height - 30, 120, 30};
+
+    ctx->background_music = LoadMusicStream("assets/trouble_with_tribals.mp3");
+    SetMusicVolume(ctx->background_music, 0.03);
+
+    ctx->terrain_tex = LoadTexture("assets/terrain.png");
+    {
+        
+    }
+
+    ctx->current_screen = client_screen_names::MAIN_MENU;
+
+    ctx->is_init = true;
+}
+
+CLIENT_NET_UPDATE(client_net_update) {
+    client_context *ctx = (client_context *)mem->base;
 
     if (ctx->current_screen == client_screen_names::MAIN_MENU) {
         comm_server_header *header;
@@ -687,123 +689,7 @@ CLIENT_UPDATE(client_update) {
             }
         }
     } else if (ctx->current_screen == client_screen_names::GAME) {
-        UpdateMusicStream(ctx->background_music);
 
-        real32 scr_width = GetScreenWidth();
-        real32 scr_height = GetScreenHeight();
-
-        if (IsKeyPressed(KEY_LEFT)) {
-            if (ctx->camera.x > 0) {
-                ctx->camera.x -= 1;
-            }
-        }
-        if (IsKeyPressed(KEY_RIGHT)) {
-            if (ctx->camera.x < ctx->map.width) {
-                ctx->camera.x += 1;
-            }
-        }
-        if (IsKeyPressed(KEY_UP)) {
-            if (ctx->camera.y > 0) {
-                ctx->camera.y -= 1;
-            }
-        }
-        if (IsKeyPressed(KEY_DOWN)) {
-            if (ctx->camera.y < ctx->map.height) {
-                ctx->camera.y += 1;
-            }
-        }
-
-        if (!is_pt_in_gui(ctx, GetMousePosition())) {
-            Vector2 mouse_pos = GetMousePosition();
-            v2<u32> mouse_tile_pos;
-            real32 tile_width = 32.0f;
-            real32 tile_height = 32.0f;
-            mouse_tile_pos.x = (u32)floor(mouse_pos.x / tile_width);
-            mouse_tile_pos.y = (u32)floor(mouse_pos.y / tile_height);
-            mouse_tile_pos.x += ctx->camera.x;
-            mouse_tile_pos.y += ctx->camera.y;
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-                if (ctx->selected_entity != NULL) {
-                    if (ctx->selected_entity->type == entity_types::UNIT) {
-                        auto u = (unit *)ctx->selected_entity;
-                        v2<u32> prev_path = u->position;
-                        v2<u32> *paths;
-                        u32 num_paths = get_path_for_unit(ctx, u, mouse_tile_pos, &ctx->temp_mem, &paths);
-
-                        for (u32 i = 0; i < num_paths; ++i) {
-                            u32 num_entities;
-                            entity **entities = find_entities_at_position(ctx->map.entities, paths[i], &ctx->temp_mem, &num_entities);
-                            v2<s32> d;
-                            d.x = (s32)paths[i].x - (s32)prev_path.x;
-                            d.y = (s32)paths[i].y - (s32)prev_path.y;
-
-                            comm_client_header header;
-                            if (u->loaded_by != NULL) {
-                                header.name = comm_client_msg_names::UNLOAD_UNIT;
-                                comm_write(comm, &header, sizeof(header));
-                                comm_client_unload_unit_body body;
-                                body.unit_id = u->server_id;
-                                body.delta = d;
-                                comm_write(comm, &body, sizeof(body));
-                            } else {
-                                unit *u_that_loads = NULL;
-                                if (u->name == unit_names::SOLDIER) {
-                                    for (u32 j = 0; j < num_entities; ++j) {
-                                        if (entities[j]->type == entity_types::UNIT) {
-                                            auto u = (unit *)(entities[j]);
-                                            if (u->name == unit_names::CARAVAN) {
-                                                u_that_loads = u;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if (u_that_loads != NULL) {
-                                    header.name = comm_client_msg_names::LOAD_UNIT;
-                                    comm_write(comm, &header, sizeof(header));
-                                    comm_client_load_unit_body body;
-                                    body.unit_that_loads = u_that_loads->server_id; 
-                                    body.unit_to_load = u->server_id;
-                                    comm_write(comm, &body, sizeof(body));
-                                } else {
-                                    header.name = comm_client_msg_names::MOVE_UNIT;
-                                    comm_write(comm, &header, sizeof(header));
-                                    comm_client_move_unit_body body;
-                                    body.unit_id = u->server_id;
-                                    body.delta = d;
-                                    comm_write(comm, &body, sizeof(body));
-                                }
-                            }
-
-                            prev_path = paths[i];
-                        }
-                    }
-                }
-            } else if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-                u32 num_entities;
-                entity **entities = find_entities_at_position(ctx->map.entities, mouse_tile_pos, &ctx->temp_mem, &num_entities);
-                if (num_entities > 0) {
-                    bool found = false;
-                    for (u32 i = 0; i < num_entities; ++i) {
-                        if (entities[i] == ctx->selected_entity) {
-                            found = true;
-                            if (i == num_entities - 1) {
-                                ctx->selected_entity = entities[0];
-                            } else {
-                                ctx->selected_entity = entities[i + 1];
-                            }
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        ctx->selected_entity = entities[0];
-                    }
-                } else {
-                    ctx->selected_entity = NULL;
-                }
-            }
-        }
 
         comm_server_header *header;
         s32 len = comm_read(comm, ctx->read_buffer.base, ctx->read_buffer.max);
@@ -851,8 +737,8 @@ CLIENT_UPDATE(client_update) {
                             if (discover_town_body->owner == ctx->my_server_id) {
                                 s32 camera_x = (s32)discover_town_body->position.x;
                                 s32 camera_y = (s32)discover_town_body->position.y;
-                                u32 num_tiles_in_scr_width = scr_width / 32;
-                                u32 num_tiles_in_scr_height = scr_height / 32;
+                                u32 num_tiles_in_scr_width = GetScreenWidth() / 32;
+                                u32 num_tiles_in_scr_height = GetScreenHeight() / 32;
                                 u32 half_scr_width = num_tiles_in_scr_width >> 1;
                                 u32 half_scr_height = num_tiles_in_scr_height >> 1;
                                 camera_x -= half_scr_width;
@@ -912,15 +798,38 @@ CLIENT_UPDATE(client_update) {
                         add_unit_body = (comm_server_add_unit_body *)(ctx->read_buffer.base + buf_it);
                         buf_it += sizeof(*add_unit_body);
 
-                        unit *u = (unit *)memory_arena_use(mem, sizeof(*u));
-                        ctx->map.entities.push_front(u);
-                        ctx->selected_entity = u;
-                        u->type = entity_types::UNIT;
-                        u->server_id = add_unit_body->unit_id;
-                        u->position = add_unit_body->position;
-                        u->name = add_unit_body->unit_name;
-                        u->action_points = add_unit_body->action_points;
-                        u->owner = add_unit_body->owner;
+                        entity *ent = find_entity_by_server_id(ctx->map.entities, add_unit_body->unit_id);
+                        if (ent) {
+                            if (ent->type == entity_types::UNIT) {
+                                unit *u = (unit *)ent;
+                                u->position = add_unit_body->position;
+                                u->name = add_unit_body->unit_name;
+                                u->action_points = add_unit_body->action_points;
+                                u->owner = add_unit_body->owner;
+                            }
+                        } else {
+                            unit *u = (unit *)memory_arena_use(mem, sizeof(*u));
+                            ctx->map.entities.push_front(u);
+                            ctx->selected_entity = u;
+                            u->type = entity_types::UNIT;
+                            u->server_id = add_unit_body->unit_id;
+                            u->position = add_unit_body->position;
+                            u->name = add_unit_body->unit_name;
+                            u->action_points = add_unit_body->action_points;
+                            u->owner = add_unit_body->owner;
+                        }
+                    }
+                } else if (header->name == comm_server_msg_names::REMOVE_UNIT) {
+                    comm_server_remove_unit_body *remove_unit_body;
+                    if (len - buf_it >= sizeof(*remove_unit_body)) {
+                        remove_unit_body = (comm_server_remove_unit_body *)(ctx->read_buffer.base + buf_it);
+                        buf_it += sizeof(*remove_unit_body);
+
+                        if (ctx->selected_entity &&
+                            ctx->selected_entity->server_id == remove_unit_body->unit_id) {
+                            ctx->selected_entity = NULL;
+                        }
+                        remove_entity_by_server_id(&ctx->map.entities, remove_unit_body->unit_id);
                     }
                 } else if (header->name == comm_server_msg_names::MOVE_UNIT) {
                     comm_server_move_unit_body *move_unit_body;
@@ -996,7 +905,7 @@ CLIENT_UPDATE(client_update) {
     comm_flush(comm);
 }
 
-CLIENT_RENDER(client_render) {
+CLIENT_UPDATE_AND_RENDER(client_update_and_render) {
     client_context *ctx = (client_context *)mem->base;
 
     BeginDrawing();
@@ -1016,6 +925,120 @@ CLIENT_RENDER(client_render) {
             real32 scr_width = GetScreenWidth();
             real32 scr_height = GetScreenHeight();
 
+            UpdateMusicStream(ctx->background_music);
+
+            if (IsKeyPressed(KEY_LEFT)) {
+                if (ctx->camera.x > 0) {
+                    ctx->camera.x -= 1;
+                }
+            }
+            if (IsKeyPressed(KEY_RIGHT)) {
+                if (ctx->camera.x < ctx->map.width) {
+                    ctx->camera.x += 1;
+                }
+            }
+            if (IsKeyPressed(KEY_UP)) {
+                if (ctx->camera.y > 0) {
+                    ctx->camera.y -= 1;
+                }
+            }
+            if (IsKeyPressed(KEY_DOWN)) {
+                if (ctx->camera.y < ctx->map.height) {
+                    ctx->camera.y += 1;
+                }
+            }
+
+            if (!is_pt_in_gui(ctx, GetMousePosition())) {
+                Vector2 mouse_pos = GetMousePosition();
+                v2<u32> mouse_tile_pos;
+                real32 tile_width = 32.0f;
+                real32 tile_height = 32.0f;
+                mouse_tile_pos.x = (u32)floor(mouse_pos.x / tile_width);
+                mouse_tile_pos.y = (u32)floor(mouse_pos.y / tile_height);
+                mouse_tile_pos.x += ctx->camera.x;
+                mouse_tile_pos.y += ctx->camera.y;
+                if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+                    if (ctx->selected_entity != NULL) {
+                        if (ctx->selected_entity->type == entity_types::UNIT) {
+                            auto u = (unit *)ctx->selected_entity;
+                            v2<u32> prev_path = u->position;
+                            v2<u32> *paths;
+                            u32 num_paths = get_path_for_unit(ctx, u, mouse_tile_pos, &ctx->temp_mem, &paths);
+
+                            for (u32 i = 0; i < num_paths; ++i) {
+                                u32 num_entities;
+                                entity **entities = find_entities_at_position(ctx->map.entities, paths[i], &ctx->temp_mem, &num_entities);
+                                v2<s32> d;
+                                d.x = (s32)paths[i].x - (s32)prev_path.x;
+                                d.y = (s32)paths[i].y - (s32)prev_path.y;
+
+                                comm_client_header header;
+                                if (u->loaded_by != NULL) {
+                                    header.name = comm_client_msg_names::UNLOAD_UNIT;
+                                    comm_write(comm, &header, sizeof(header));
+                                    comm_client_unload_unit_body body;
+                                    body.unit_id = u->server_id;
+                                    body.delta = d;
+                                    comm_write(comm, &body, sizeof(body));
+                                } else {
+                                    unit *u_that_loads = NULL;
+                                    if (u->name == unit_names::SOLDIER) {
+                                        for (u32 j = 0; j < num_entities; ++j) {
+                                            if (entities[j]->type == entity_types::UNIT) {
+                                                auto u = (unit *)(entities[j]);
+                                                if (u->name == unit_names::CARAVAN) {
+                                                    u_that_loads = u;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (u_that_loads != NULL) {
+                                        header.name = comm_client_msg_names::LOAD_UNIT;
+                                        comm_write(comm, &header, sizeof(header));
+                                        comm_client_load_unit_body body;
+                                        body.unit_that_loads = u_that_loads->server_id; 
+                                        body.unit_to_load = u->server_id;
+                                        comm_write(comm, &body, sizeof(body));
+                                    } else {
+                                        header.name = comm_client_msg_names::MOVE_UNIT;
+                                        comm_write(comm, &header, sizeof(header));
+                                        comm_client_move_unit_body body;
+                                        body.unit_id = u->server_id;
+                                        body.delta = d;
+                                        comm_write(comm, &body, sizeof(body));
+                                    }
+                                }
+
+                                prev_path = paths[i];
+                            }
+                        }
+                    }
+                } else if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+                    u32 num_entities;
+                    entity **entities = find_entities_at_position(ctx->map.entities, mouse_tile_pos, &ctx->temp_mem, &num_entities);
+                    if (num_entities > 0) {
+                        bool found = false;
+                        for (u32 i = 0; i < num_entities; ++i) {
+                            if (entities[i] == ctx->selected_entity) {
+                                found = true;
+                                if (i == num_entities - 1) {
+                                    ctx->selected_entity = entities[0];
+                                } else {
+                                    ctx->selected_entity = entities[i + 1];
+                                }
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            ctx->selected_entity = entities[0];
+                        }
+                    } else {
+                        ctx->selected_entity = NULL;
+                    }
+                }
+            }
 
             draw_map(ctx);
 
@@ -1072,6 +1095,11 @@ CLIENT_RENDER(client_render) {
             GuiWindowBox(admin_window, "Admin");
             {
                 real32 Y = 30;
+                char buf[256];
+                snprintf(buf, 256, "Your camera position is: %d, %d", ctx->camera.x, ctx->camera.y);
+                GuiLabel(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + Y, admin_window.width - 20, 20}, buf);
+                Y += 20 + 10;
+
                 if (GuiButton(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + Y, admin_window.width - 20, 20}, "DISCOVER")) {
                     comm_client_header header;
                     header.name = comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP;
@@ -1079,7 +1107,6 @@ CLIENT_RENDER(client_render) {
                     comm_write(comm, &header, sizeof(header));
                 }
                 Y += 20 + 10;
-                char buf[256];
                 snprintf(buf, 256, "Your server id is: %d", ctx->my_server_id);
                 GuiLabel(CLITERAL(Rectangle){admin_window.x + 10, admin_window.y + Y, admin_window.width - 20, 20}, buf);
                 Y += 20 + 10;

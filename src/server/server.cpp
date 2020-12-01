@@ -3,8 +3,8 @@
 #define STB_PERLIN_IMPLEMENTATION
 #include "stb_perlin.h"
 
-#define MAP_GRID_WIDTH 80
-#define MAP_GRID_HEIGHT 80
+#define MAP_GRID_WIDTH 10
+#define MAP_GRID_HEIGHT 10
 
 enum server_state_names {
     AWAITING_CONNECTIONS = 0,
@@ -108,6 +108,18 @@ void discover_3x3(u32 client_id, server_context *ctx, v2<u32> center) {
                         discover_town_body.owner = entities[i]->owner;
                         discover_town_body.position = entities[i]->position;
                         comm_write(comm, &discover_town_body, sizeof(discover_town_body));
+                    } else if (entities[i]->type == entity_types::UNIT) {
+                        unit *u = (unit *)entities[i];
+                        header.name = comm_server_msg_names::ADD_UNIT;
+                        comm_write(comm, &header, sizeof(header));
+
+                        comm_server_add_unit_body add_unit_body;
+                        add_unit_body.unit_id = u->server_id;
+                        add_unit_body.owner = u->owner;
+                        add_unit_body.position = u->position;
+                        add_unit_body.action_points = u->action_points;
+                        add_unit_body.unit_name = u->name;
+                        comm_write(comm, &add_unit_body, sizeof(add_unit_body));
                     }
                 }
 
@@ -124,6 +136,96 @@ void discover_3x3(u32 client_id, server_context *ctx, v2<u32> center) {
     comm_write(comm, &discover_body, sizeof(discover_body));
     comm_write(comm, discover_body_tiles, sizeof(*discover_body_tiles) * num);
 }
+
+void move_unit_delta(communication *comm, server_context *ctx, unit *u, v2<s32> delta) {
+    u32 action_points = u->action_points;
+    if (action_points > 0) {
+        action_points--;
+
+        v2<s32> d = delta;
+        v2<u32> pos = u->position;
+        v2<u32> prev_pos = pos;
+        pos.x += d.x;
+        pos.y += d.y;
+
+        u32 idx = pos.y * ctx->map.terrain_width + pos.x;
+        bool passable = false;
+        unit_names name = u->name;
+        terrain_names terrain = ctx->map.terrain[idx];
+        if (name == unit_names::SOLDIER) {
+            if (terrain == terrain_names::GRASS) {
+                passable = true;
+            }
+        } else if (name == unit_names::CARAVAN) {
+            if (terrain == terrain_names::GRASS ||
+                terrain == terrain_names::DESERT) {
+                passable = true;
+            }
+        }
+
+        if (passable) {
+            u->action_points = action_points;
+            u->position = pos;
+
+            comm_server_header head;
+            head.name = comm_server_msg_names::MOVE_UNIT;
+            comm_server_move_unit_body b;
+            b.unit_id = u->server_id;
+            b.action_points_left = u->action_points;
+            b.new_position = pos;
+            comm_write(comm, &head, sizeof(head));
+            comm_write(comm, &b, sizeof(b));
+
+            discover_3x3(u->owner, ctx, pos);
+
+            if (u->slot != NULL) {
+                u->slot->position = pos;
+                head.name = comm_server_msg_names::MOVE_UNIT;
+                b.unit_id = u->slot->server_id;
+                b.action_points_left = u->slot->action_points;
+                b.new_position = pos;
+                comm_write(comm, &head, sizeof(head));
+                comm_write(comm, &b, sizeof(b));
+            }
+
+            for (u32 client_id = 1; client_id < ctx->clients.used; ++client_id) {
+                if (client_id == u->owner) continue;
+
+                u32 prev_idx = prev_pos.y * ctx->map.terrain_width + prev_pos.x;
+                if (ctx->clients.discovered_map[client_id][idx]) {
+                    if (ctx->clients.discovered_map[client_id][prev_idx]) {
+                        head.name = comm_server_msg_names::MOVE_UNIT;
+                        b.unit_id = u->server_id;
+                        b.action_points_left = u->action_points;
+                        b.new_position = pos;
+                        comm_write(&ctx->clients.comms[client_id], &head, sizeof(head));
+                        comm_write(&ctx->clients.comms[client_id], &b, sizeof(b));
+                    } else {
+                        head.name = comm_server_msg_names::ADD_UNIT;
+                        comm_server_add_unit_body add_unit_body;
+                        add_unit_body.unit_id = u->server_id;
+                        add_unit_body.action_points = u->action_points;
+                        add_unit_body.position = u->position;
+                        add_unit_body.unit_name = u->name;
+                        add_unit_body.owner = u->owner;
+                        comm_write(&ctx->clients.comms[client_id], &head, sizeof(head));
+                        comm_write(&ctx->clients.comms[client_id], &add_unit_body, sizeof(add_unit_body));
+                    }
+                } else {
+                    if (ctx->clients.discovered_map[client_id][prev_idx]) {
+                        head.name = comm_server_msg_names::REMOVE_UNIT;
+                        comm_server_remove_unit_body remove_unit_body;
+                        remove_unit_body.unit_id = u->server_id;
+                        comm_write(&ctx->clients.comms[client_id], &head, sizeof(head));
+                        comm_write(&ctx->clients.comms[client_id], &remove_unit_body, sizeof(remove_unit_body));
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 
 real32 interpolate(real32 a, real32 b, real32 w) {
     return (1.0f - w) * a + w * b;
@@ -479,6 +581,9 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms, serve
                     } else if (header->name == comm_client_msg_names::ADMIN_DISCOVER_ENTIRE_MAP) {
                         if (ctx->clients.admins[i]) {
                             send_entire_map(comm, ctx);
+                            for (u32 j = 0; j < ctx->map.terrain_width * ctx->map.terrain_height; ++j) {
+                                ctx->clients.discovered_map[i][j] = true;
+                            }
                         }
                     } else if (header->name == comm_client_msg_names::ADMIN_ADD_UNIT) {
                         if (ctx->clients.admins[i]) {
@@ -589,61 +694,13 @@ void server_update(memory_arena *mem, communication *comms, u32 num_comms, serve
                         auto ent_iter = ctx->map.entities.first;
                         while (ent_iter) {
                             auto ent = ent_iter->payload;
-                            s32 owner = ent->owner;
-                            if (owner == i && ent->type == entity_types::UNIT &&
+                            if (ent->type == entity_types::UNIT &&
+                                i == ent->owner &&
                                 body->unit_id == ent->server_id) {
                                 auto u = (unit *)ent;
-                                u32 action_points = u->action_points;
-                                if (action_points > 0) {
-                                    action_points--;
 
-                                    v2<s32> d = body->delta;
-                                    v2<u32> pos = u->position;
-                                    pos.x += d.x;
-                                    pos.y += d.y;
-
-                                    u32 idx = pos.y * ctx->map.terrain_width + pos.x;
-                                    bool passable = false;
-                                    unit_names name = u->name;
-                                    terrain_names terrain = ctx->map.terrain[idx];
-                                    if (name == unit_names::SOLDIER) {
-                                        if (terrain == terrain_names::GRASS) {
-                                            passable = true;
-                                        }
-                                    } else if (name == unit_names::CARAVAN) {
-                                        if (terrain == terrain_names::GRASS ||
-                                            terrain == terrain_names::DESERT) {
-                                            passable = true;
-                                        }
-                                    }
-
-                                    if (passable) {
-                                        u->action_points = action_points;
-                                        u->position = pos;
-
-                                        comm_server_header head;
-                                        head.name = comm_server_msg_names::MOVE_UNIT;
-                                        comm_server_move_unit_body b;
-                                        b.unit_id = u->server_id;
-                                        b.action_points_left = u->action_points;
-                                        b.new_position = pos;
-                                        comm_write(comm, &head, sizeof(head));
-                                        comm_write(comm, &b, sizeof(b));
-
-                                        discover_3x3(i, ctx, pos);
-
-                                        if (u->slot != NULL) {
-                                            u->slot->position = pos;
-                                            head.name = comm_server_msg_names::MOVE_UNIT;
-                                            b.unit_id = u->slot->server_id;
-                                            b.action_points_left = u->slot->action_points;
-                                            b.new_position = pos;
-                                            comm_write(comm, &head, sizeof(head));
-                                            comm_write(comm, &b, sizeof(b));
-                                        }
-                                    }
-                                    break;
-                                }
+                                move_unit_delta(comm, ctx, u, body->delta);
+                                break;
                             }
                             ent_iter = ent_iter->next;
                         }

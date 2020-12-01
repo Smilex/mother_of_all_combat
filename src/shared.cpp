@@ -467,6 +467,37 @@ find_entity_by_server_id(doubly_linked_list<entity *> entities, u32 id) {
     return NULL;
 }
 
+entity *
+remove_entity_by_server_id(doubly_linked_list<entity *> *entities, u32 id) {
+    if (!entities->first) return NULL;
+
+    auto iter = entities->first;
+    auto ent = iter->payload;
+
+    if (ent->server_id == id) {
+        entities->first = iter->next;
+        if (entities->first)
+            entities->first->prev = NULL;
+        return ent;
+    }
+
+    iter = iter->next;
+    while (iter) {
+        auto ent = iter->payload;
+        if (ent->server_id == id) {
+            if (iter->prev)
+                iter->prev->next = iter->next;
+            if (iter->next)
+                iter->next->prev = iter->prev;
+            return ent;
+        }
+
+        iter = iter->next;
+    }
+
+    return NULL;
+}
+
 entity **
 find_entities_at_position(doubly_linked_list<entity *> entities, v2<u32> pos, memory_arena *mem, u32 *num_entities) {
     entity **rv = (entity **)(mem->base + mem->used);

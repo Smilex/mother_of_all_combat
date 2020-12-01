@@ -180,6 +180,7 @@ enum class comm_server_msg_names {
     CONSTRUCTION_SET,
     ADD_UNIT,
     MOVE_UNIT,
+    REMOVE_UNIT,
     SET_UNIT_ACTION_POINTS,
     LOAD_UNIT,
     UNLOAD_UNIT,
@@ -245,6 +246,10 @@ struct comm_server_add_unit_body {
     u32 action_points;
     unit_names unit_name;
     v2<u32> position;
+};
+
+struct comm_server_remove_unit_body {
+    u32 unit_id;
 };
 
 struct comm_client_move_unit_body {

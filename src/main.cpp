@@ -12,15 +12,17 @@
 #include "communication/client/memory.cpp"
 #include "server/server.cpp"
 
-#define CLIENT_UPDATE(_n) void _n(memory_arena *mem, communication *comm)
-typedef CLIENT_UPDATE(client_update_t);
-#define CLIENT_RENDER(_n) void _n(memory_arena *mem, communication *comm)
-typedef CLIENT_RENDER(client_render_t);
+#define CLIENT_NET_UPDATE(_n) void _n(memory_arena *mem, communication *comm)
+typedef CLIENT_NET_UPDATE(client_net_update_t);
+#define CLIENT_UPDATE_AND_RENDER(_n) void _n(memory_arena *mem, communication *comm)
+typedef CLIENT_UPDATE_AND_RENDER(client_update_and_render_t);
+#define CLIENT_INIT(_n) void _n(memory_arena *mem)
+typedef CLIENT_INIT(client_init_t);
 
 #include "client/client.cpp"
 #include "ai/ai.cpp"
 
-#define NUM_AI 1
+#define NUM_AI 0
 #define NUM_CLIENTS 2
 
 enum class main_screen_names {
@@ -35,8 +37,9 @@ memory_arena total_memory, server_memory, client_memory[NUM_CLIENTS], ai_memory[
 communication server_to_client_comm[NUM_CLIENTS], client_to_server_comm[NUM_CLIENTS], ai_to_server_comm[NUM_AI], server_to_ai_comm[NUM_AI];
 comm_memory_pipe server_to_client_pipe[NUM_CLIENTS], client_to_server_pipe[NUM_CLIENTS], server_to_ai_pipe[NUM_AI], ai_to_server_pipe[NUM_AI];
 
-client_update_t *client_update_ptr = &client_update;
-client_render_t *client_render_ptr = &client_render;
+client_init_t *client_init_ptr = &client_init;
+client_net_update_t *client_net_update_ptr = &client_net_update;
+client_update_and_render_t *client_update_and_render_ptr = &client_update_and_render;
 
 void sitrep(sitrep_names name, char *fmt, ...) {
     char time_str[64] = {0};
@@ -134,22 +137,24 @@ int main(int argc, char *argv[]) {
         server_comms[i + NUM_CLIENTS] = server_to_ai_comm[i];
     }
 
-
-
     InitWindow(1280, 720, "Hello, world");
     InitAudioDevice();
     SetTargetFPS(60);
+
+    for (u32 i = 0; i < NUM_CLIENTS; ++i) {
+        client_init_ptr(&client_memory[i]);
+    }
 
     while(!WindowShouldClose()) {
         server_update(&server_memory, server_comms, NUM_CLIENTS + NUM_AI, s_input, &s_output);
         memset(&s_input, 0, sizeof(s_input));
 
         for (u32 i = 0; i < NUM_CLIENTS; ++i) {
-            client_update_ptr(&client_memory[i], &client_to_server_comm[i]);
+            client_net_update_ptr(&client_memory[i], &client_to_server_comm[i]);
             if (s_output.current_turn_id == 0) {
-                client_render_ptr(&client_memory[0], &client_to_server_comm[0]);
+                client_update_and_render_ptr(&client_memory[0], &client_to_server_comm[0]);
             } else if (i == s_output.current_turn_id - 1) {
-                client_render_ptr(&client_memory[i], &client_to_server_comm[i]);
+                client_update_and_render_ptr(&client_memory[i], &client_to_server_comm[i]);
             }
         }
         for (u32 i = 0; i < NUM_AI; ++i)
