@@ -318,6 +318,18 @@ void send_entire_map(communication *comm, server_context *ctx) {
             discover_town_body.owner = town->owner;
             discover_town_body.position = town->position;
             comm_write(comm, &discover_town_body, sizeof(discover_town_body));
+        } else if (ent->type == entity_types::UNIT) {
+            auto u = (unit *)ent;
+            header.name = comm_server_msg_names::ADD_UNIT;
+            comm_write(comm, &header, sizeof(header));
+
+            comm_server_add_unit_body body;
+            body.unit_id = u->server_id;
+            body.owner = u->owner;
+            body.action_points = u->action_points;
+            body.unit_name = u->name;
+            body.position = u->position;
+            comm_write(comm, &body, sizeof(body));
         }
         ent_iter = ent_iter->next;
     }
